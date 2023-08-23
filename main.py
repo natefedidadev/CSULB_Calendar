@@ -14,6 +14,7 @@ import streamlit as st
 
 
 
+# Returns a "plot" object that displays a calendar month
 def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
     firstweekday = list(day_abbrs).index(firstweekday)
     calendar = Calendar(firstweekday=firstweekday)
@@ -130,12 +131,27 @@ with st.form("input_form"):
 
 
     submitted = st.form_submit_button("Submit")
+
+def make_grid(year: int):
+    months = []
+    rows = []
+    for i in range(1, 13):  # Loop through all the months
+        months.append(make_calendar(year, i))
+        if i % 3 == 0:  # Every 3 months, start a new row
+            rows.append(months)
+            months = []
+    grid = gridplot(toolbar_location=None, children=rows)
+    return grid
+
     
 if submitted:
     with st.expander("Option 1"):
         st.bokeh_chart(make_calendar(2015,4))
     with st.expander("Option 2"):
         st.bokeh_chart(make_calendar(2016,5))
+    with st.expander("Test"):
+        st.bokeh_chart(make_grid(2023))  # Display the grid for the year 2023
+
 
 
 # Output
