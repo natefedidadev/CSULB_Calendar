@@ -84,6 +84,11 @@ def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
 
     return plot
 
+# Streamlit Global Environment Variables
+if 'first_day' not in st.session_state:
+    st.session_state.first_day = None
+
+
 # GUI
 st.markdown("## CSULB Academic Calender Generator")
 
@@ -111,7 +116,7 @@ with st.expander("Open to see the hard rules"):
                 ---
     """)
 with st.form("input_form"):
-    first_day = st.date_input("Select the first day of fall semester", format="MM/DD/YYYY")
+    st.session_state.first_day = st.date_input("Select the first day of fall semester", format="MM/DD/YYYY")
 
     st.markdown("""**Select the checkboxes of the soft rules to guarantee (Please select ___)** """)
 
@@ -135,22 +140,39 @@ with st.form("input_form"):
 def make_grid(year: int):
     months = []
     rows = []
-    for i in range(1, 13):  # Loop through all the months
-        months.append(make_calendar(year, i))
-        if i % 3 == 0:  # Every 3 months, start a new row
+    for i in range(13):
+        # Start our current month at August, and iterate until we reach August again
+        cur_month = (7 + i) % 12 + 1
+
+        # Move to next year once current month has gone past December
+        if i <= 4:
+            cur_year = year
+        else:
+            cur_year = year+1
+        
+        # Add generated month to array
+        months.append(make_calendar(cur_year, cur_month))
+
+        # Build each row of months and clear the array for the next months
+        if (i+1) % 5 == 0 or i == 12:  # Every 5 months, start a new row
             rows.append(months)
             months = []
+
     grid = gridplot(toolbar_location=None, children=rows)
     return grid
 
     
 if submitted:
+    selected_year = st.session_state.first_day.year
     with st.expander("Option 1"):
-        st.bokeh_chart(make_calendar(2015,4))
+        st.image("table_test.png")
+        st.bokeh_chart(make_calendar(selected_year,4))
     with st.expander("Option 2"):
-        st.bokeh_chart(make_calendar(2016,5))
+        st.image("table_test.png")
+        st.bokeh_chart(make_calendar(selected_year,5))
     with st.expander("Test"):
-        st.bokeh_chart(make_grid(2023))  # Display the grid for the year 2023
+        st.image("table_test.png")
+        st.bokeh_chart(make_grid(selected_year))  # Display the grid for the selected year
 
 
 
