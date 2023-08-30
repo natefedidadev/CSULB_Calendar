@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from bokeh.document import Document
 from bokeh.embed import file_html
-from bokeh.layouts import gridplot
+from bokeh.layouts import gridplot, layout
 from bokeh.models import (CategoricalAxis, CategoricalScale, ColumnDataSource,
                           FactorRange, HoverTool, Plot, Rect, Text)
 from bokeh.util.browser import view
@@ -12,20 +12,24 @@ from bokeh.plotting import figure
 import streamlit as st
 from dateutil.relativedelta import relativedelta
 from bokeh.resources import INLINE
+from bokeh.transform import factor_cmap
+from bokeh.models.widgets import Div
 from datetime import date
 import holidays
+import pandas as pd
 us_holidays = holidays.US()
 
 # Returns a "plot" object that displays a calendar month
-def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
+def make_calendar(year: int, month: int, color_dict: dict, firstweekday: str = "Mon") -> Plot:
     firstweekday = list(day_abbrs).index(firstweekday)
     calendar = Calendar(firstweekday=firstweekday)
 
     month_days  = [ None if not day else str(day) for day in calendar.itermonthdays(year, month) ]
     month_weeks = len(month_days)//7
 
-    workday = "linen"
-    weekend = "lightsteelblue"
+    workday = color_dict["instructional_day"]
+    weekend = "white"
+    holiday = color_dict["holiday"]
 
     def weekday(date):
         return (date.weekday() - firstweekday) % 7
@@ -37,11 +41,15 @@ def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
     week_days = pick_weekdays([workday]*5 + [weekend]*2)
     day_backgrounds = sum([week_days]*month_weeks, [])
     
+    idx=0
     for day in month_days:
         if day:
             if date(year,month,int(day)) in us_holidays:
-                idx_day = month_days.index(day)
-                day_backgrounds[idx_day] = 'pink'
+                # idx_day = month_days.index(day)
+                day_backgrounds[idx] = holiday
+        else:
+            day_backgrounds[idx] = "white"
+        idx+=1
 
     source = ColumnDataSource(data=dict(
         days            = list(day_names)*month_weeks,
@@ -164,37 +172,72 @@ def make_grid(year: int):
     grid = gridplot(toolbar_location=None, children=rows)
     return grid
 
-def make_grid2(year: int):
+color_dict1 = {
+    "academic_work_day": "lightsteelblue",
+    "instructional_day": "lightyellow",
+    "convocation": "darkblue",
+    "commencement": "lightbrown",
+    "finals": "pink",
+    "holiday": "white",
+    "semester_start": "green",
+    "no_class_campus_open": "purple",
+    "summer_session": "orange",
+    "winter_session": "grey"
+}
+
+color_dict2 = {
+    "academic_work_day": "turquoise",
+    "instructional_day": "navajowhite",
+    "convocation": "darkblue",
+    "commencement": "lightbrown",
+    "finals": "darkgreen",
+    "holiday": "pink",
+    "semester_start": "lightpurple",
+    "no_class_campus_open": "darkpurple",
+    "summer_session": "yellow",
+    "winter_session": "steelblue"
+}
+
+def make_grid2(year: int, color_dict):
     months = []
     rows = []
     start_date = datetime(2013, 8, 1)
     j = 0
     for i in range(13):
         cur_date = start_date + relativedelta(months=i)
-        months.append(make_calendar(cur_date.year, cur_date.month))
+        months.append(make_calendar(cur_date.year, cur_date.month, color_dict))
         j += 1
-        if j % 4 == 0:
+        if j % 5 == 0:
             rows.append(months)
             months = []
         if i == 12:
             rows.append(months)
             # st.write(rows)
     
-    grid = gridplot(toolbar_location=None, children=rows, width=250, height=250)
+    grid = gridplot(toolbar_location=None, children=rows, width=200, height=200)
     return grid
 
 if submitted:
     selected_year = st.session_state.first_day.year
     with st.expander("Option 1"):
-        st.image("table_test.png")
-        st.bokeh_chart(make_calendar(selected_year,4))
-    with st.expander("Option 2"):
-        st.image("table_test.png")
-        st.bokeh_chart(make_calendar(selected_year,5))
-    with st.expander("Test"):
-        st.image("table_test.png")
-        st.write(selected_year)
-        st.bokeh_chart(make_grid2(selected_year))  # Display the grid for the selected year
+        col1, col2, col3 = st.columns([1,15,1])
+        with col1:
+            st.write(' ')
+        with col2:
+            st.image("color_legend.png")
+            st.bokeh_chart(make_grid2(selected_year, color_dict2), use_container_width= False)  # Display the grid for the selected year
+        with col3:
+            st.write(' ')  
+    with st.expander("Option 2"):     
+        col1, col2, col3 = st.columns([1,15,1])
+        with col1:
+            st.write(' ')
+        with col2:
+            st.image("table_test.png")
+            st.bokeh_chart(make_grid2(selected_year, color_dict1), use_container_width= False)  # Display the grid for the selected year
+        with col3:
+            st.write(' ')  
+        
 
 
 
