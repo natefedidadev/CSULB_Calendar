@@ -1,18 +1,20 @@
 # noqa: E501
 from calendar import Calendar, day_abbr as day_abbrs, month_name as month_names
+from datetime import datetime, timedelta
 
 from bokeh.document import Document
 from bokeh.embed import file_html
 from bokeh.layouts import gridplot
 from bokeh.models import (CategoricalAxis, CategoricalScale, ColumnDataSource,
                           FactorRange, HoverTool, Plot, Rect, Text)
-from bokeh.sampledata.us_holidays import us_holidays
 from bokeh.util.browser import view
 from bokeh.plotting import figure
 import streamlit as st
-
-
-
+from dateutil.relativedelta import relativedelta
+from bokeh.resources import INLINE
+from datetime import date
+import holidays
+us_holidays = holidays.US()
 
 # Returns a "plot" object that displays a calendar month
 def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
@@ -33,21 +35,19 @@ def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
 
     day_names = pick_weekdays(day_abbrs)
     week_days = pick_weekdays([workday]*5 + [weekend]*2)
+    day_backgrounds = sum([week_days]*month_weeks, [])
+    
+    for day in month_days:
+        if day:
+            if date(year,month,int(day)) in us_holidays:
+                idx_day = month_days.index(day)
+                day_backgrounds[idx_day] = 'pink'
 
     source = ColumnDataSource(data=dict(
         days            = list(day_names)*month_weeks,
         weeks           = sum([ [str(week)]*7 for week in range(month_weeks) ], []),
         month_days      = month_days,
-        day_backgrounds = sum([week_days]*month_weeks, []),
-    ))
-
-    holidays = [ (date, summary.replace("(US-OPM)", "").strip()) for (date, summary) in us_holidays
-        if date.year == year and date.month == month and "(US-OPM)" in summary ]
-
-    holidays_source = ColumnDataSource(data=dict(
-        holidays_days  = [ day_names[weekday(date)] for date, _ in holidays ],
-        holidays_weeks = [ str((weekday(date.replace(day=1)) + date.day) // 7) for date, _ in holidays ],
-        month_holidays = [ summary for _, summary in holidays ],
+        day_backgrounds = day_backgrounds,
     ))
 
     xdr = FactorRange(factors=list(day_names))
@@ -66,8 +66,8 @@ def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
     rect = Rect(x="days", y="weeks", width=0.9, height=0.9, fill_color="day_backgrounds", line_color="silver")
     plot.add_glyph(source, rect)
 
-    rect = Rect(x="holidays_days", y="holidays_weeks", width=0.9, height=0.9, fill_color="pink", line_color="indianred")
-    rect_renderer = plot.add_glyph(holidays_source, rect)
+#    rect = Rect(x="holidays_days", y="holidays_weeks", width=0.9, height=0.9, fill_color="pink", line_color="indianred")
+#    rect_renderer = plot.add_glyph(holidays_source, rect)
 
     text = Text(x="days", y="weeks", text="month_days", text_align="center", text_baseline="middle")
     plot.add_glyph(source, text)
@@ -79,10 +79,13 @@ def make_calendar(year: int, month: int, firstweekday: str = "Mon") -> Plot:
     xaxis.axis_line_color = None
     plot.add_layout(xaxis, 'above')
 
-    hover_tool = HoverTool(renderers=[rect_renderer], tooltips=[("Holiday", "@month_holidays")])
-    plot.tools.append(hover_tool)
+#    hover_tool = HoverTool(renderers=[rect_renderer], tooltips=[("Holiday", "@month_holidays")])
+#    plot.tools.append(hover_tool)
 
     return plot
+
+# Set Default Page Width = WIDE
+st.set_page_config(layout='wide')
 
 # Streamlit Global Environment Variables
 if 'first_day' not in st.session_state:
@@ -161,7 +164,25 @@ def make_grid(year: int):
     grid = gridplot(toolbar_location=None, children=rows)
     return grid
 
+def make_grid2(year: int):
+    months = []
+    rows = []
+    start_date = datetime(2013, 8, 1)
+    j = 0
+    for i in range(13):
+        cur_date = start_date + relativedelta(months=i)
+        months.append(make_calendar(cur_date.year, cur_date.month))
+        j += 1
+        if j % 4 == 0:
+            rows.append(months)
+            months = []
+        if i == 12:
+            rows.append(months)
+            # st.write(rows)
     
+    grid = gridplot(toolbar_location=None, children=rows, width=250, height=250)
+    return grid
+
 if submitted:
     selected_year = st.session_state.first_day.year
     with st.expander("Option 1"):
@@ -172,15 +193,8 @@ if submitted:
         st.bokeh_chart(make_calendar(selected_year,5))
     with st.expander("Test"):
         st.image("table_test.png")
-        st.bokeh_chart(make_grid(selected_year))  # Display the grid for the selected year
+        st.write(selected_year)
+        st.bokeh_chart(make_grid2(selected_year))  # Display the grid for the selected year
 
-
-
-# Output
-# col_list = st.columns(3,gap="medium")
-# # Print the months in a year
-# for i in range(1, 13):
-#     with col_list[i%3]:
-#         st.bokeh_chart(make_calendar(2015, i))
 
 
