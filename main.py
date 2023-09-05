@@ -5,18 +5,23 @@ from datetime import datetime, timedelta
 from bokeh.document import Document
 from bokeh.embed import file_html
 from bokeh.layouts import gridplot, layout
+
 from bokeh.models import (CategoricalAxis, CategoricalScale, ColumnDataSource,
-                          FactorRange, HoverTool, Plot, Rect, Text)
+                          FactorRange, HoverTool, Plot, Rect, Text, Grid, TableColumn, DataTable)
 from bokeh.util.browser import view
-from bokeh.plotting import figure
+from bokeh.plotting import figure, show
 import streamlit as st
+import streamlit.components.v1 as components
 from dateutil.relativedelta import relativedelta
 from bokeh.resources import INLINE
 from bokeh.transform import factor_cmap
 from bokeh.models.widgets import Div
+from bokeh.io import export_png
 from datetime import date
 import holidays
 import pandas as pd
+import plotly.graph_objects as go
+
 us_holidays = holidays.US()
 
 # Returns a "plot" object that displays a calendar month
@@ -148,29 +153,29 @@ with st.form("input_form"):
 
     submitted = st.form_submit_button("Submit")
 
-def make_grid(year: int):
-    months = []
-    rows = []
-    for i in range(13):
-        # Start our current month at August, and iterate until we reach August again
-        cur_month = (7 + i) % 12 + 1
+# def make_grid(year: int):
+#     months = []
+#     rows = []
+#     for i in range(13):
+#         # Start our current month at August, and iterate until we reach August again
+#         cur_month = (7 + i) % 12 + 1
 
-        # Move to next year once current month has gone past December
-        if i <= 4:
-            cur_year = year
-        else:
-            cur_year = year+1
+#         # Move to next year once current month has gone past December
+#         if i <= 4:
+#             cur_year = year
+#         else:
+#             cur_year = year+1
         
-        # Add generated month to array
-        months.append(make_calendar(cur_year, cur_month))
+#         # Add generated month to array
+#         months.append(make_calendar(cur_year, cur_month))
 
-        # Build each row of months and clear the array for the next months
-        if (i+1) % 5 == 0 or i == 12:  # Every 5 months, start a new row
-            rows.append(months)
-            months = []
+#         # Build each row of months and clear the array for the next months
+#         if (i+1) % 5 == 0 or i == 12:  # Every 5 months, start a new row
+#             rows.append(months)
+#             months = []
 
-    grid = gridplot(toolbar_location=None, children=rows)
-    return grid
+#     grid = gridplot(toolbar_location=None, children=rows)
+#     return grid
 
 color_dict1 = {
     "academic_work_day": "lightsteelblue",
@@ -198,7 +203,7 @@ color_dict2 = {
     "winter_session": "steelblue"
 }
 
-def make_grid2(year: int, color_dict):
+def make_grid(year: int, color_dict):
     months = []
     rows = []
     start_date = datetime(2013, 8, 1)
@@ -217,6 +222,25 @@ def make_grid2(year: int, color_dict):
     grid = gridplot(toolbar_location=None, children=rows, width=200, height=200)
     return grid
 
+def get_month_data():
+    # Define the data
+    months = ["Aug-21", "Sep", "Oct", "Nov", "Dec", "Total", "Jan-22", "Feb", "Mar", "Apr", "May", "Total"]
+    awd = [0]*12  # Replace with actual data
+    id_values = [0]*12  # Replace with actual data
+
+    # Create the table figure
+    fig = go.Figure(data=[go.Table(
+        header=dict(values=['Month', 'AWD', 'ID']),
+        cells=dict(values=[months, awd, id_values]))
+    ])
+
+    # Save the figure as PNG
+    # fig.write_image("table.png")
+    return fig
+
+
+
+
 if submitted:
     selected_year = st.session_state.first_day.year
     with st.expander("Option 1"):
@@ -225,7 +249,7 @@ if submitted:
             st.write(' ')
         with col2:
             st.image("color_legend.png")
-            st.bokeh_chart(make_grid2(selected_year, color_dict2), use_container_width= False)  # Display the grid for the selected year
+            st.bokeh_chart(make_grid(selected_year, color_dict2), use_container_width= False)  # Display the grid for the selected year
         with col3:
             st.write(' ')  
     with st.expander("Option 2"):     
@@ -234,7 +258,9 @@ if submitted:
             st.write(' ')
         with col2:
             st.image("table_test.png")
-            st.bokeh_chart(make_grid2(selected_year, color_dict1), use_container_width= False)  # Display the grid for the selected year
+            st.bokeh_chart(make_grid(selected_year, color_dict1), use_container_width= False)  # Display the grid for the selected year
+            # get_month_data()
+            st.plotly_chart(get_month_data())
         with col3:
             st.write(' ')  
         
