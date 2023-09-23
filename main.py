@@ -21,6 +21,8 @@ from datetime import date
 import holidays
 import pandas as pd
 import plotly.graph_objects as go
+from classes.month import CalMonth
+from PIL import Image, ImageDraw, ImageFont
 
 us_holidays = holidays.US()
 
@@ -132,50 +134,28 @@ with st.expander("Open to see the hard rules"):
                 ---
     """)
 with st.form("input_form"):
+
     st.session_state.first_day = st.date_input("Select the first day of fall semester", format="MM/DD/YYYY")
-
     st.markdown("""**Select the checkboxes of the soft rules to guarantee (Please select ___)** """)
+    c1, c2 = st.columns(2)
+    with c1:
+        # Checkboxes:
+        even = st.checkbox('Even distribution of one day per week classes (14-15)')
+        friday_convocation = st.checkbox("Convocation is a Friday before the First Instructional Day (ID)")
+        monday_fall = st.checkbox("Fall semester starts on a Monday")
+        extended_fall = st.checkbox("Extended Fall break (take off Monday-Wednesday before Thanksgiving)")
+        monday_final = st.checkbox("Fall semester finals start on a Monday")
+        summer_fall_difference = st.checkbox("Difference between the end of Summer and start of Fall semester is more than 7 calendar days")
+    
+    with c2:
+        caesar_chavez = st.checkbox("Put Cesar Cavez Day in Spring Break (after if not selected)")
+        monday_spring_final = st.checkbox("Spring semester finals start on a Monday")
+        non_monday_commencement = st.checkbox("Commencement is Tuesday-Friday")
+        memorial_commencement = st.checkbox("Commencement is before Memorial Day")
+        winter_session_len = st.checkbox("Limit winter session to 10 days long")
+        MLK_spring = st.checkbox("Spring starts after MLK")
+        submitted = st.form_submit_button("Submit")
 
-    # Checkboxes:
-    even = st.checkbox('Even distribution of one day per week classes (14-15)')
-    friday_convocation = st.checkbox("Convocation is a Friday before the First Instructional Day (ID)")
-    monday_fall = st.checkbox("Fall semester starts on a Monday")
-    extended_fall = st.checkbox("Extended Fall break (take off Monday-Wednesday before Thanksgiving)")
-    monday_final = st.checkbox("Fall semester finals start on a Monday")
-    summer_fall_difference = st.checkbox("Difference between the end of Summer and start of Fall semester is more than 7 calendar days")
-    caesar_chavez = st.checkbox("Put Cesar Cavez Day in Spring Break (after if not selected)")
-    monday_spring_final = st.checkbox("Spring semester finals start on a Monday")
-    non_monday_commencement = st.checkbox("Commencement is Tuesday-Friday")
-    memorial_commencement = st.checkbox("Commencement is before Memorial Day")
-    winter_session_len = st.checkbox("Limit winter session to 10 days long")
-    MLK_spring = st.checkbox("Spring starts after MLK")
-
-
-    submitted = st.form_submit_button("Submit")
-
-# def make_grid(year: int):
-#     months = []
-#     rows = []
-#     for i in range(13):
-#         # Start our current month at August, and iterate until we reach August again
-#         cur_month = (7 + i) % 12 + 1
-
-#         # Move to next year once current month has gone past December
-#         if i <= 4:
-#             cur_year = year
-#         else:
-#             cur_year = year+1
-        
-#         # Add generated month to array
-#         months.append(make_calendar(cur_year, cur_month))
-
-#         # Build each row of months and clear the array for the next months
-#         if (i+1) % 5 == 0 or i == 12:  # Every 5 months, start a new row
-#             rows.append(months)
-#             months = []
-
-#     grid = gridplot(toolbar_location=None, children=rows)
-#     return grid
 
 color_dict1 = {
     "academic_work_day": "lightsteelblue",
@@ -238,6 +218,40 @@ def get_month_data():
     # fig.write_image("table.png")
     return fig
 
+def build_year(selected_year: datetime.year):
+    cmonth = CalMonth()
+    initial_month = st.session_state.first_day.month
+    # Create a blank canvas (resulting image)
+    width, height = 5 * 350, 3 * 220  # Size of the resulting image TODO: make 350 & 200 into variables
+    result_image = Image.new("RGB", (width, height), (255, 255, 255))
+    
+
+    # Load and resize multiple PIL images (you can replace these with your own images)
+    images = []
+    j = 0
+    for i in range(13):
+        cur_date = st.session_state.first_day + relativedelta(months=i)
+        if initial_month+i <= 12:
+            cmonth.set_day_bgcolor(1, "red")
+            image = cmonth.draw(300,selected_year,cur_date.month)
+        else:
+            image = cmonth.draw(300,selected_year+1,cur_date.month)
+        images.append(image)
+        
+
+    # Define the grid layout (5x3)
+    grid_size = (5, 3)
+
+    # Paste each image onto the canvas at the specified positions
+    for i, image in enumerate(images):
+        row = i // grid_size[0]
+        col = i % grid_size[0]
+        position = (col * 350, row * 220)
+        result_image.paste(image, position)
+
+    # Save or display the resulting image
+    return result_image
+
 
 
 
@@ -248,8 +262,7 @@ if submitted:
         with col1:
             st.write(' ')
         with col2:
-            st.image("color_legend.png")
-            st.bokeh_chart(make_grid(selected_year, color_dict2), use_container_width= False)  # Display the grid for the selected year
+            st.image(build_year(selected_year))
         with col3:
             st.write(' ')  
     with st.expander("Option 2"):     
@@ -262,8 +275,15 @@ if submitted:
             # get_month_data()
             st.plotly_chart(get_month_data())
         with col3:
-            st.write(' ')  
-        
-
-
-
+            st.write(' ') 
+    with st.expander("Option 3"): 
+        cmonth = CalMonth()
+        col1, col2, col3 = st.columns([1,15,1])
+        with col1:
+            st.write(" ")
+        with col2:
+            st.image(cmonth.draw(250,selected_year,9))
+            st.image(cmonth.draw(250,selected_year,10))
+            st.image(cmonth.draw(250,selected_year,11))
+        with col3:
+            st.write(" ")
