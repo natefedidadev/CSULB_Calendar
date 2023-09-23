@@ -2,21 +2,9 @@
 from calendar import Calendar, day_abbr as day_abbrs, month_name as month_names
 from datetime import datetime, timedelta
 
-from bokeh.document import Document
-from bokeh.embed import file_html
-from bokeh.layouts import gridplot, layout
-
-from bokeh.models import (CategoricalAxis, CategoricalScale, ColumnDataSource,
-                          FactorRange, HoverTool, Plot, Rect, Text, Grid, TableColumn, DataTable)
-from bokeh.util.browser import view
-from bokeh.plotting import figure, show
 import streamlit as st
 import streamlit.components.v1 as components
 from dateutil.relativedelta import relativedelta
-from bokeh.resources import INLINE
-from bokeh.transform import factor_cmap
-from bokeh.models.widgets import Div
-from bokeh.io import export_png
 from datetime import date
 import holidays
 import pandas as pd
@@ -25,79 +13,6 @@ from classes.month import CalMonth
 from PIL import Image, ImageDraw, ImageFont
 
 us_holidays = holidays.US()
-
-# Returns a "plot" object that displays a calendar month
-def make_calendar(year: int, month: int, color_dict: dict, firstweekday: str = "Mon") -> Plot:
-    firstweekday = list(day_abbrs).index(firstweekday)
-    calendar = Calendar(firstweekday=firstweekday)
-
-    month_days  = [ None if not day else str(day) for day in calendar.itermonthdays(year, month) ]
-    month_weeks = len(month_days)//7
-
-    workday = color_dict["instructional_day"]
-    weekend = "white"
-    holiday = color_dict["holiday"]
-
-    def weekday(date):
-        return (date.weekday() - firstweekday) % 7
-
-    def pick_weekdays(days):
-        return [ days[i % 7] for i in range(firstweekday, firstweekday+7) ]
-
-    day_names = pick_weekdays(day_abbrs)
-    week_days = pick_weekdays([workday]*5 + [weekend]*2)
-    day_backgrounds = sum([week_days]*month_weeks, [])
-    
-    idx=0
-    for day in month_days:
-        if day:
-            if date(year,month,int(day)) in us_holidays:
-                # idx_day = month_days.index(day)
-                day_backgrounds[idx] = holiday
-        else:
-            day_backgrounds[idx] = "white"
-        idx+=1
-
-    source = ColumnDataSource(data=dict(
-        days            = list(day_names)*month_weeks,
-        weeks           = sum([ [str(week)]*7 for week in range(month_weeks) ], []),
-        month_days      = month_days,
-        day_backgrounds = day_backgrounds,
-    ))
-
-    xdr = FactorRange(factors=list(day_names))
-    ydr = FactorRange(factors=list(reversed([ str(week) for week in range(month_weeks) ])))
-    x_scale, y_scale = CategoricalScale(), CategoricalScale()
-
-    plot = Plot(x_range=xdr, y_range=ydr, x_scale=x_scale, y_scale=y_scale,
-                width=300, height=300, outline_line_color=None)
-    plot.title.text = month_names[month]
-    plot.title.text_font_size = "16px"
-    plot.title.text_color = "darkolivegreen"
-    plot.title.offset = 25
-    plot.min_border_left = 0
-    plot.min_border_bottom = 5
-
-    rect = Rect(x="days", y="weeks", width=0.9, height=0.9, fill_color="day_backgrounds", line_color="silver")
-    plot.add_glyph(source, rect)
-
-#    rect = Rect(x="holidays_days", y="holidays_weeks", width=0.9, height=0.9, fill_color="pink", line_color="indianred")
-#    rect_renderer = plot.add_glyph(holidays_source, rect)
-
-    text = Text(x="days", y="weeks", text="month_days", text_align="center", text_baseline="middle")
-    plot.add_glyph(source, text)
-
-    xaxis = CategoricalAxis()
-    xaxis.major_label_text_font_size = "11px"
-    xaxis.major_label_standoff = 0
-    xaxis.major_tick_line_color = None
-    xaxis.axis_line_color = None
-    plot.add_layout(xaxis, 'above')
-
-#    hover_tool = HoverTool(renderers=[rect_renderer], tooltips=[("Holiday", "@month_holidays")])
-#    plot.tools.append(hover_tool)
-
-    return plot
 
 # Set Default Page Width = WIDE
 st.set_page_config(layout='wide')
@@ -183,40 +98,6 @@ color_dict2 = {
     "winter_session": "steelblue"
 }
 
-def make_grid(year: int, color_dict):
-    months = []
-    rows = []
-    start_date = datetime(2013, 8, 1)
-    j = 0
-    for i in range(13):
-        cur_date = start_date + relativedelta(months=i)
-        months.append(make_calendar(cur_date.year, cur_date.month, color_dict))
-        j += 1
-        if j % 5 == 0:
-            rows.append(months)
-            months = []
-        if i == 12:
-            rows.append(months)
-            # st.write(rows)
-    
-    grid = gridplot(toolbar_location=None, children=rows, width=200, height=200)
-    return grid
-
-def get_month_data():
-    # Define the data
-    months = ["Aug-21", "Sep", "Oct", "Nov", "Dec", "Total", "Jan-22", "Feb", "Mar", "Apr", "May", "Total"]
-    awd = [0]*12  # Replace with actual data
-    id_values = [0]*12  # Replace with actual data
-
-    # Create the table figure
-    fig = go.Figure(data=[go.Table(
-        header=dict(values=['Month', 'AWD', 'ID']),
-        cells=dict(values=[months, awd, id_values]))
-    ])
-
-    # Save the figure as PNG
-    # fig.write_image("table.png")
-    return fig
 
 def build_year(selected_year: datetime.year):
     cmonth = CalMonth()
@@ -254,7 +135,6 @@ def build_year(selected_year: datetime.year):
 
 
 
-
 if submitted:
     selected_year = st.session_state.first_day.year
     with st.expander("Option 1"):
@@ -265,25 +145,3 @@ if submitted:
             st.image(build_year(selected_year))
         with col3:
             st.write(' ')  
-    with st.expander("Option 2"):     
-        col1, col2, col3 = st.columns([1,15,1])
-        with col1:
-            st.write(' ')
-        with col2:
-            st.image("table_test.png")
-            st.bokeh_chart(make_grid(selected_year, color_dict1), use_container_width= False)  # Display the grid for the selected year
-            # get_month_data()
-            st.plotly_chart(get_month_data())
-        with col3:
-            st.write(' ') 
-    with st.expander("Option 3"): 
-        cmonth = CalMonth()
-        col1, col2, col3 = st.columns([1,15,1])
-        with col1:
-            st.write(" ")
-        with col2:
-            st.image(cmonth.draw(250,selected_year,9))
-            st.image(cmonth.draw(250,selected_year,10))
-            st.image(cmonth.draw(250,selected_year,11))
-        with col3:
-            st.write(" ")
