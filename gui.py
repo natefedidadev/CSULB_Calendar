@@ -9,10 +9,15 @@ from datetime import date
 import holidays
 import pandas as pd
 import plotly.graph_objects as go
-from classes.month import CalMonth
+#from .classes.month import CalMonth
 from PIL import Image, ImageDraw, ImageFont
+import requests
+from io import BytesIO
 
 us_holidays = holidays.US()
+
+# Requests Tutorial
+# https://www.geeksforgeeks.org/python-requests-tutorial/#
 
 # Set Default Page Width = WIDE
 st.set_page_config(layout='wide')
@@ -21,6 +26,20 @@ st.set_page_config(layout='wide')
 if 'first_day' not in st.session_state:
     st.session_state.first_day = None
 
+
+def build_year_request(dt : datetime):
+    #dt = datetime.strptime(selected_year, "%Y-%m-%d")
+    # Making a POST request
+    payload = {'month':dt.month, 'day':dt.day, 'year':dt.year}
+
+    response = requests.post("http://127.0.0.1:8000/calendar/build_year", json = payload)
+
+    if response.status_code == 200:
+        img_bytes = BytesIO(response.content)
+        img = Image.open(img_bytes)
+        return img
+    else:
+        return {"msg":"error"}
 
 # GUI
 st.markdown("## CSULB Academic Calender Generator")
@@ -99,49 +118,54 @@ color_dict2 = {
 }
 
 
-def build_year(selected_year: datetime.year):
-    cmonth = CalMonth()
-    initial_month = st.session_state.first_day.month
-    # Create a blank canvas (resulting image)
-    width, height = 5 * 350, 3 * 220  # Size of the resulting image TODO: make 350 & 200 into variables
-    result_image = Image.new("RGB", (width, height), (255, 255, 255))
+# def build_year(selected_year: datetime.year):
+#     cmonth = CalMonth()
+#     initial_month = st.session_state.first_day.month
+#     # Create a blank canvas (resulting image)
+#     width, height = 5 * 350, 3 * 220  # Size of the resulting image TODO: make 350 & 200 into variables
+#     result_image = Image.new("RGB", (width, height), (255, 255, 255))
     
 
-    # Load and resize multiple PIL images (you can replace these with your own images)
-    images = []
-    j = 0
-    for i in range(13):
-        cur_date = st.session_state.first_day + relativedelta(months=i)
-        if initial_month+i <= 12:
-            cmonth.set_day_bgcolor(1, "red")
-            image = cmonth.draw(300,selected_year,cur_date.month)
-        else:
-            image = cmonth.draw(300,selected_year+1,cur_date.month)
-        images.append(image)
+#     # Load and resize multiple PIL images (you can replace these with your own images)
+#     images = []
+#     j = 0
+#     for i in range(13):
+#         cur_date = st.session_state.first_day + relativedelta(months=i)
+#         if initial_month+i <= 12:
+#             cmonth.set_day_bgcolor(1, "red")
+#             image = cmonth.draw(300,selected_year,cur_date.month)
+#         else:
+#             image = cmonth.draw(300,selected_year+1,cur_date.month)
+#         images.append(image)
         
 
-    # Define the grid layout (5x3)
-    grid_size = (5, 3)
+#     # Define the grid layout (5x3)
+#     grid_size = (5, 3)
 
-    # Paste each image onto the canvas at the specified positions
-    for i, image in enumerate(images):
-        row = i // grid_size[0]
-        col = i % grid_size[0]
-        position = (col * 350, row * 220)
-        result_image.paste(image, position)
+#     # Paste each image onto the canvas at the specified positions
+#     for i, image in enumerate(images):
+#         row = i // grid_size[0]
+#         col = i % grid_size[0]
+#         position = (col * 350, row * 220)
+#         result_image.paste(image, position)
 
-    # Save or display the resulting image
-    return result_image
+#     # Save or display the resulting image
+#     return result_image
 
 
 
 if submitted:
-    selected_year = st.session_state.first_day.year
     with st.expander("Option 1"):
         col1, col2, col3 = st.columns([1,15,1])
         with col1:
             st.write(' ')
         with col2:
-            st.image(build_year(selected_year))
+            #st.image(build_year(selected_year))
+            # call the build_year endpoint on the server, -> get the image
+            # display the image
+            img = build_year_request(st.session_state.first_day)
+            #st.write(img)
+            st.image(img)
         with col3:
             st.write(' ')  
+

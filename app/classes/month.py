@@ -42,8 +42,11 @@ class CalMonth:
         img = Image.new('RGB', (width, image_height), 'white')
         draw = ImageDraw.Draw(img)
 
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        font_path_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        #font_path = "fonts/DejaVuSans.ttf"
+        #font_path_bold = "fonts/DejaVuSans-Bold.ttf"
+        font_path = "arial.ttf"
+        font_path_bold = "arial.ttf"
+
         font = ImageFont.truetype(font_path_bold, int(22 * width / 350))
         small_font = ImageFont.truetype(font_path, int(18 * width / 350))
 
