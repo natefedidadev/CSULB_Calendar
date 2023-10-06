@@ -117,43 +117,6 @@ color_dict2 = {
     "winter_session": "steelblue"
 }
 
-
-# def build_year(selected_year: datetime.year):
-#     cmonth = CalMonth()
-#     initial_month = st.session_state.first_day.month
-#     # Create a blank canvas (resulting image)
-#     width, height = 5 * 350, 3 * 220  # Size of the resulting image TODO: make 350 & 200 into variables
-#     result_image = Image.new("RGB", (width, height), (255, 255, 255))
-    
-
-#     # Load and resize multiple PIL images (you can replace these with your own images)
-#     images = []
-#     j = 0
-#     for i in range(13):
-#         cur_date = st.session_state.first_day + relativedelta(months=i)
-#         if initial_month+i <= 12:
-#             cmonth.set_day_bgcolor(1, "red")
-#             image = cmonth.draw(300,selected_year,cur_date.month)
-#         else:
-#             image = cmonth.draw(300,selected_year+1,cur_date.month)
-#         images.append(image)
-        
-
-#     # Define the grid layout (5x3)
-#     grid_size = (5, 3)
-
-#     # Paste each image onto the canvas at the specified positions
-#     for i, image in enumerate(images):
-#         row = i // grid_size[0]
-#         col = i % grid_size[0]
-#         position = (col * 350, row * 220)
-#         result_image.paste(image, position)
-
-#     # Save or display the resulting image
-#     return result_image
-
-
-
 if submitted:
     with st.expander("Option 1"):
         col1, col2, col3 = st.columns([1,15,1])
@@ -165,7 +128,7 @@ if submitted:
             # display the image
             img = build_year_request(st.session_state.first_day)
             #st.write(img)
-            st.image(img)
+            st.image(img, output_format="PNG")
         with col3:
             st.write(' ')  
 
