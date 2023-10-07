@@ -7,8 +7,9 @@ import plotly.graph_objects as go
 from io import BytesIO
 
 class CalYear:
+    
     def __init__(self):
-            self.color_dict = {
+        self.color_dict = {
             'NONE': 'gray',
             'AWD': ['#CCECFF'],
             'CONVOCATION': 'green',
@@ -19,8 +20,11 @@ class CalYear:
             'SUMMER_SESSION': 'pink',
             'WINTER_SESSION': 'brown'
         }
+            
+        self.font_path = "fonts/OpenSans-Regular.ttf"
+        self.font_path_bold = "fonts/OpenSans-Bold.ttf"   
     
-    def draw(self, year, month, day, width):
+    async def adraw(self, year, month, day, width):
         m_width = 350
         m_height = 350
         # Create a blank canvas (resulting image)
@@ -37,9 +41,9 @@ class CalYear:
             cmonth = CalMonth(year,cur_date.month)
             if month+i <= 12:
                 cmonth.set_day_bgcolor(1, "yellow")
-                image = cmonth.draw(m_width)
+                image = await cmonth.adraw(m_width)
             else:
-                image = cmonth.draw(m_width)
+                image = await cmonth.adraw(m_width)
             images.append(image)
             months_list.append(cmonth.get_abbr())
 
@@ -54,13 +58,20 @@ class CalYear:
             result_image.paste(image, position)
 
         # im = Image.open("./table.png")
-        awd_fall = [12, 21, 22, 19, 19]
-        id_fall = [6, 21, 22, 16, 9]
+        awd_month_fall = [12, 21, 22, 19, 19, 42, 41, 32, 49, 39]
+        id_month_fall = [6, 21, 22, 16, 9, 45, 23, 21, 29, 26]
         
-        # Create Table and display it
-        byte_stream = BytesIO(self.create_plotly_table(months_list[:5], awd_fall, id_fall))
-        im = Image.open(byte_stream)
-        result_image.paste(im, [0, 3*m_height+200])
+        # Create Month_Table and paste it to result img
+        im = await self.acreate_months_table(months_list[:10], awd_month_fall, id_month_fall)
+        box = (0, 3*m_height+100)
+        result_image.paste(im, box)
+
+        # Create Day_Table and paste it to result img
+        awd_day_fall = [12, 21, 22, 19, 19, 42, 41, 32, 49, 39, 12, 14]
+        id_day_fall = [6, 21, 22, 16, 9, 45, 23, 21, 29, 26, 12, 14]
+        im = await self.acreate_days_table(awd_day_fall, id_day_fall)
+        box = (650, 3*m_height+100)
+        result_image.paste(im, box)
 
         # reference color_legend and display it
         im = self.get_legend_table()
@@ -68,42 +79,114 @@ class CalYear:
 
         return result_image
     
-    def create_plotly_table(self, months: list, awd: list, id: list) -> bytes:
+    async def acreate_months_table(self, months: list, awd: list, id: list, table_width: int = 600, cell_height: int = 40, font_size: int = 16) -> bytes:
         '''Creates''' 
         # Data for the table
-        header = ['Fall', 'AWD', 'ID']
+        header = ['Fall', 'AWD', 'ID', 'Spring', 'AWD', 'ID']
+        
+        #
+        months_fall = months[0:5]
+        months_spring = months[5:10]
+        awd_fall = awd[0:5]
+        awd_spring = awd[5:10]
+        id_fall = id[0:5]
+        id_spring = id[5:10]
+
         # Final output row
-        months.append("Total")
-        awd.append(sum(awd))
-        id.append(sum(id))
+        months_fall.append("Total")
+        awd_fall.append(sum(awd_fall))
+        id_fall.append(sum(id_fall))
+
+        months_spring.append("Total")
+        awd_spring.append(sum(awd_spring))
+        id_spring.append(sum(id_spring))
 
         # Create the table using plotly.graph_objects
         fig = go.Figure(data=[go.Table(
-            header=dict(values=header, line = dict(color='black', width=1)),
-            cells=dict(values=[
-                months,
-                awd,
-                id,
-            ],
+            header=dict(values=header, line = dict(color='black', width=1), height = cell_height, font = dict(size = font_size)),
+            cells=dict(values=[months_fall,awd_fall,id_fall, months_spring, awd_spring, id_spring], 
+                height = cell_height,
+
             fill_color=[
                 ['white'] * 6,  # Month column background color
                 self.color_dict["AWD"] * 6,   # AWD column background color
                 self.color_dict["ID"] * 6,    # ID column background color
+
+                ['white'] * 6,  # Month column background color
+                self.color_dict["AWD"] * 6,   # AWD column background color
+                self.color_dict["ID"] * 6,    # ID column background color
             ],
-            line = dict(color='black', width=1)
+
+            line = dict(color='black', width=1),
             )
         )])
-        # Define size of image
+        # Define size of Overall Image
         fig.update_layout(
             autosize=False,
-            width=650,
-            height=1250
+            width= table_width,
+            height= 550,
+            margin=dict(l=0, r=5, t=0, b=0)  # Add this line
         )
+        fig.update_traces(cells_font=dict(size = font_size))
 
         # Show the table
-        return fig.to_image(format='png')
+        bytes = BytesIO(fig.to_image(format='png'))
+        im = Image.open(bytes)
+        return im
+    
+    async def acreate_days_table(self, awd: list, id: list, table_width: int = 600, cell_height: int = 40, font_size: int = 16) -> bytes:
+        '''Creates''' 
+        # Data for the table
+        header = ['Fall', 'AWD', 'ID', 'Spring', 'AWD', 'ID']
+        
+        #
+        days = ['M', 'T', 'W', 'R', 'F', 'Sa', 'Total']
+        awd_fall = awd[0:6]
+        awd_spring = awd[6:12]
+        id_fall = id[0:6]
+        id_spring = id[6:12]
+
+        # Final output row
+        awd_fall.append(sum(awd_fall))
+        id_fall.append(sum(id_fall))
+
+        awd_spring.append(sum(awd_spring))
+        id_spring.append(sum(id_spring))
+
+        # Create the table using plotly.graph_objects
+        fig = go.Figure(data=[go.Table(
+            header=dict(values=header, line = dict(color='black', width=1), height = cell_height, font = dict(size = font_size)),
+            cells=dict(values=[days,awd_fall,id_fall, days, awd_spring, id_spring], 
+                height = cell_height,
+
+            fill_color=[
+                ['white'] * 7,  # Month column background color
+                self.color_dict["AWD"] * 7,   # AWD column background color
+                self.color_dict["ID"] * 7,    # ID column background color
+
+                ['white'] * 7,  # Month column background color
+                self.color_dict["AWD"] * 7,   # AWD column background color
+                self.color_dict["ID"] * 7,    # ID column background color
+            ],
+
+            line = dict(color='black', width=1),
+            )
+        )])
+        # Define size of Overall Image
+        fig.update_layout(
+            autosize=False,
+            width= table_width,
+            height= 550,
+            margin=dict(l=0, r=5, t=0, b=0)  # Add this line
+        )
+        fig.update_traces(cells_font=dict(size = font_size))
+
+        # Show the table
+        bytes = BytesIO(fig.to_image(format='png'))
+        im = Image.open(bytes)
+        return im
     
     def get_legend_table(self):
-        img = Image.open("test_legend.png")
-        return img
+        im = Image.open('test_legend.png')
+        return im
               

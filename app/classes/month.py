@@ -56,7 +56,7 @@ class CalMonth:
         }
         return months_abbr[self.month]
 
-    def draw(self, width):
+    async def adraw(self, width):
         aspect_ratio = 320 / 300  # based on previous image dimensions
         image_height = int(width / aspect_ratio) 
         scaled_height = 50 * (image_height / 200)
