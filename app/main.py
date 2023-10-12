@@ -7,6 +7,7 @@ from .classes.month import CalMonth
 from .classes.year import CalYear
 from fastapi.responses import StreamingResponse
 import io
+from datetime import date
 from typing import Optional
 
 # https://www.geeksforgeeks.org/python-requests-tutorial/#
@@ -63,9 +64,9 @@ async def testOne(req : Calendar_Input):
     return StreamingResponse(img_bytes_io, media_type="image/png")
 
 @app.post("/calendar/build_year")
-async def build_year(start_date : Calendar_Input):    
-    calyear = CalYear()
-    result_image = await calyear.adraw(start_date.year, start_date.month,start_date.day,350)
+async def build_year(req : Calendar_Input):    
+    calyear = CalYear(date(req.year, req.month, req.day))
+    result_image = await calyear.gen_schedule()
     
     # Save the PIL image to a BytesIO object
     img_bytes_io = io.BytesIO()
