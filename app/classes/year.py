@@ -7,6 +7,7 @@ from dateutil.relativedelta import relativedelta
 import plotly.graph_objects as go
 from io import BytesIO
 from enum import Enum
+import multiprocessing as mp
 
 class DayType(Enum):
     NONE = 0
@@ -66,6 +67,7 @@ class CalYear:
         # Convocation Date
         days_until_friday = (4 - sem_start_date.weekday() + 7) % 7
         convocation = sem_start_date + timedelta(days=days_until_friday)
+        
         self.compute_holidays()
         self.compute_awd()
 
@@ -93,6 +95,10 @@ class CalYear:
                     current_calendar[i].set_day_bgcolor(cur_day.day, self.legend_data["AWD"])
                 elif cur_day in self.cal_dict and DayType.NO_CLASS_CAMPUS_OPEN == self.cal_dict[cur_day]:
                     current_calendar[i].set_day_bgcolor(cur_day.day, self.legend_data["No Class, Campus Open"])
+                elif cur_day in self.cal_dict and DayType.WINTER_SESSION == self.cal_dict[cur_day]:
+                    current_calendar[i].set_day_bgcolor(cur_day.day, self.legend_data["Winter Session"])
+                elif cur_day in self.cal_dict and DayType.FINALS == self.cal_dict[cur_day]:
+                    current_calendar[i].set_day_bgcolor(cur_day.day, self.legend_data["Finals"])
                 elif cur_day in self.cal_dict and DayType.HOLIDAY == self.cal_dict[cur_day]:
                     current_calendar[i].set_day_bold(cur_day.day)
                 cur_day = cur_day + relativedelta(days=1)
@@ -105,20 +111,42 @@ class CalYear:
         """ AWD must be between 170 - 180 """
         cur_date = self.start_date
         awd_cnt = 0
+        christmas = date(self.start_date.year, 12, 25) # self.us_holidays.get_named("Christmas Day (observed)")[2]
+
+        # Calculate the date two weeks before Christmas
+        two_weeks_before_christmas = christmas - timedelta(weeks=1)
+
+        # weekday() returns 0 for Monday, 1 for Tuesday, and so on
+        days_to_go_back = two_weeks_before_christmas.weekday()
+        nearest_monday = two_weeks_before_christmas - timedelta(days=days_to_go_back)
+        
         # For Fall Semester, While the current date is before Christmas
         while cur_date < date(self.start_date.year+1, self.start_date.month+1, self.start_date.day):
             # if current day isn't a Sunday, Saturday, or is a US Holiday
             if (cur_date.weekday() != 6 and cur_date.weekday() != 5) and self.cal_dict[cur_date] == DayType.NONE and awd_cnt <= 180:
-                self.cal_dict[cur_date] = DayType.AWD
+                if cur_date >= nearest_monday and cur_date < nearest_monday + relativedelta(days=7):
+                    self.cal_dict[cur_date] = DayType.FINALS
+                else: 
+                    self.cal_dict[cur_date] = DayType.AWD
                 awd_cnt+=1
             cur_date = cur_date + relativedelta(days=1)
     
-    def compute_holidays(self):
+    def compute_holidays(self, winter_sess_len = 14, summer_sess_len = 15):
         """ Calculates spring break """
         # Calculate Spring Break (5 consecutive days w/o classes) - LBCC week preceeding easter
         easter_monday_following_year = self.us_holidays.get_named("Easter Monday")[1]
         for i in range(3,8):
             self.cal_dict[easter_monday_following_year + relativedelta(days=-i)] = DayType.NO_CLASS_CAMPUS_OPEN
+        
+        # Calculate Winter Session, starts after New Years
+        New_Years = date(self.start_date.year+1, 1, 1)
+        for i in range(winter_sess_len):
+            cur_date = New_Years + relativedelta(days=i)
+            if (cur_date.weekday() != 6 and cur_date.weekday() != 5):
+                self.cal_dict[cur_date] = DayType.WINTER_SESSION
+
+        # Calculate Summer Session, starts the first work day in June
+
             
     def setup_calendar(self):
         """ Initialize calendar and setup permanent holidays """
