@@ -23,6 +23,7 @@ class CalMonth:
     def __init__(self, year, month, font: ImageFont, small_font: ImageFont, small_font_bold: ImageFont):
         self.day_colors = {}  # Format: {day: color, ...}
         self.day_bgcolors = {}  # Format: {day: bgcolor, ...}
+        self.note = ""
         calendar.setfirstweekday(calendar.SUNDAY)
         self.cal = calendar.monthcalendar(year,month)
         self.month = month
@@ -34,21 +35,25 @@ class CalMonth:
         self.day_bold = []
         self.day_bold_outline = []
 
-    def set_day_color(self, day, color):
-        """Set the text color for a specific day."""
+    def set_day_color(self, day : int, color):
+        """ Set the text color for a specific day."""
         self.day_colors[day] = color
 
-    def set_day_bgcolor(self, day, bgcolor):
-        """Set the background color for a specific day."""
+    def set_day_bgcolor(self, day: int, bgcolor):
+        """ Set the background color for a specific day."""
         self.day_bgcolors[day] = bgcolor
 
-    def set_day_bold_outline(self, day):
-        """Set the calendar outline for the day to be bold"""
+    def set_day_bold_outline(self, day: int):
+        """ Set the calendar outline for the day to be bold"""
         self.day_bold_outline.append(day)
 
-    def set_day_bold(self, day):
-        """Set the day text to be bold """
+    def set_day_bold(self, day: int):
+        """ Set the day text to be bold """
         self.day_bold.append(day)
+    
+    def set_month_note(self, text : str):
+        """ Append a note for the month """
+        self.note = text
 
     def get_title(self)->str:
         return calendar.month_name[self.month] + " " + str(self.year)
@@ -132,9 +137,9 @@ class CalMonth:
                 else:
                     # day_bbox = draw.textbbox((col_idx * col_width, scaled_height + row_idx * row_height), "summer = 22", font=small_font)
                     draw.rectangle([(1, scaled_height + 6 * row_height + 1), (7*col_width-1, scaled_height + 7 * row_height-1)], width=1, outline="black")
-                    text_bbox = draw.textbbox(rect_coords, "summer = 22", font=self.small_font)
+                    text_bbox = draw.textbbox(rect_coords, self.note, font=self.small_font)
                     text_w = text_bbox[2] - text_bbox[0]
                     text_h = text_bbox[3] - text_bbox[1]
-                    draw.text((2*col_width, scaled_height + row_idx * row_height+(0.5*text_h)), "summer = 22", font=self.small_font, fill="black")
+                    draw.text((2*(col_width+text_w), scaled_height + row_idx * row_height+(0.5*text_h)), self.note, font=self.small_font, fill="black")
         return img
         #img.save('calendar.png')

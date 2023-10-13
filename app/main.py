@@ -1,14 +1,11 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import holidays
-import pandas as pd
 import uvicorn
 from .classes.month import CalMonth
-from .classes.year import CalYear
+from .classes.year import CalYear, Calendar_Input
 from fastapi.responses import StreamingResponse
 import io
 from datetime import date
-from typing import Optional
 
 # https://www.geeksforgeeks.org/python-requests-tutorial/#
 
@@ -18,11 +15,13 @@ class Month(BaseModel):
     month: int = 1
     day_colors : list | None = ['red','blue']
 
-class Calendar_Input(BaseModel):
+class Base_Input(BaseModel):
     month: int
     day : int 
     year: int
-    width: Optional[int] = 350
+    
+
+
 
 @app.post("/calendar/test")
 async def testThree(req : Month):
@@ -65,7 +64,7 @@ async def testOne(req : Calendar_Input):
 
 @app.post("/calendar/build_year")
 async def build_year(req : Calendar_Input):    
-    calyear = CalYear(date(req.year, req.month, req.day))
+    calyear = CalYear(req)
     result_image = await calyear.gen_schedule()
     
     # Save the PIL image to a BytesIO object
