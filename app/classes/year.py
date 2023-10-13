@@ -201,22 +201,52 @@ class CalYear:
     
     def compute_finals(self, monday_fall_final : bool = True, monday_spring_final : bool = True) -> bool:
         """ Compute Fall and Spring Final Exams Weeks (6 days)"""
+        # ### FALL FINALS    
+        # # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
+        # christmas_date = self.us_holidays.get_named("Christmas Day")[0]
+        # christmas_weekday = christmas_date.weekday()
+        # # Calculate the date of the Monday in the week before Christmas
+        # monday_before_christmas = christmas_date - timedelta(days=christmas_weekday + 7)
+        # for i in range (5):
+        #     cur_date = monday_before_christmas + relativedelta(days=i)
+        #     self.cal_dict[cur_date] = DayType.FINALS
+        # if monday_fall_final:
+        #     cur_date = cur_date + relativedelta(days=1)
+        #     self.cal_dict[cur_date] = DayType.FINALS
+        # else:
+        #     # get preceeding saturday
+        #     cur_date = cur_date + relativedelta(days=-6)
+        #     self.cal_dict[cur_date] = DayType.FINALS
         ### FALL FINALS    
         # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
         christmas_date = self.us_holidays.get_named("Christmas Day")[0]
+        days_before = 0
+        fall_end_date = christmas_date
+
+        # Leave at least 4 AWD for grading before Christmas
+        while days_before < 4:
+            fall_end_date = fall_end_date + relativedelta(days=-1)
+            if fall_end_date.weekday() < 5:  # 0-4 denotes Monday to Friday
+                days_before += 1
+        
+        cur_date = fall_end_date + relativedelta(days=-7) # sets at least 4 days before Christmas for grading
         christmas_weekday = christmas_date.weekday()
         # Calculate the date of the Monday in the week before Christmas
-        monday_before_christmas = christmas_date - timedelta(days=christmas_weekday + 7)
-        for i in range (5):
-            cur_date = monday_before_christmas + relativedelta(days=i)
-            self.cal_dict[cur_date] = DayType.FINALS
-        if monday_fall_final:
+        cnt = 0
+        while cnt < 5:
+            if cur_date.weekday() != 6:
+                cnt += 1
+                self.cal_dict[cur_date] = DayType.FINALS
             cur_date = cur_date + relativedelta(days=1)
-            self.cal_dict[cur_date] = DayType.FINALS
-        else:
-            # get preceeding saturday
-            cur_date = cur_date + relativedelta(days=-6)
-            self.cal_dict[cur_date] = DayType.FINALS
+        # if preceeding:
+        #     # get preceeding saturday
+        #     cur_date = cur_date + relativedelta(days=-6)
+        #     self.cal_dict[cur_date] = DayType.FINALS
+        # else:
+        #     cur_date = cur_date + relativedelta(days=1)
+        #     self.cal_dict[cur_date] = DayType.FINALS
+        
+        ### SPRING FINALS
         
         ### TODO: SPRING FINALS
         
