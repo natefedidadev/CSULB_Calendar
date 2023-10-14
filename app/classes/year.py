@@ -75,6 +75,7 @@ class CalYear:
         self.spring_semester_start : date = None
         self.summer_session_start : date = None
         self.winter_session_start : date = None
+        self.winter_session_end : date = None
 
         self.setup_calendar()
 
@@ -104,8 +105,8 @@ class CalYear:
             return
         if not self.compute_id():
             return
-        if not self.compute_finals(self.inputs.monday_final, self.inputs.monday_spring_final):
-            return
+        #if not self.compute_finals(self.inputs.monday_final, self.inputs.monday_spring_final):
+        #    return
         if not self.compute_awd():
             return
         
@@ -176,7 +177,7 @@ class CalYear:
             cur_date = cur_date + relativedelta(days=1)
         return True
     
-    def compute_id(self) -> bool:
+    def compute_id(self, num_id_days:int = 145) -> bool:
         """ Compute Instructional Days (ID) """
         # Total for Fall and Spring 145-149
         # Calc semester start day
@@ -186,71 +187,145 @@ class CalYear:
         if not (date(self.start_date.year, 8, 17) <= self.fall_semester_start <= date(self.start_date.year, 9, 1)):
             print("Error in Semester Start Date")
             return False
+
+        # Leave at least 4 AWD for grading before Christmas (HARD RULE?)
+        christmas_date = self.us_holidays.get_named("Christmas Day")[0]
+        cur_date = christmas_date
+        day_cnt = 0
+        while day_cnt < 4:
+            cur_date = cur_date + relativedelta(days=-1)
+            if cur_date.weekday() != 5 and cur_date.weekday() != 6:
+                self.cal_dict[cur_date] = DayType.AWD
+                day_cnt += 1
         
-        id_cnt = 0
+        # compute fall finals
+        day_cnt = 0
+        start_of_fall_finals = None
+        if not self.inputs.monday_final:
+            # we don't have to worry about starting finals on monday
+            while day_cnt < 6: # 6 days of finals
+                cur_date = cur_date + relativedelta(days=-1)
+                if cur_date.weekday() != 6: # not sunday
+                    self.cal_dict[cur_date] = DayType.FINALS
+                    day_cnt += 1
+            start_of_fall_finals = cur_date
+        else:
+            # we have to start the finals on a Monday, that means finals will end on Sat
+            cur_date = cur_date + relativedelta(days=-1)
+            # find end date first (we want a Sat)
+            while cur_date.weekday() != 5:
+                # set dates to AWD until we find our day
+                if not is_weekend(cur_date):
+                    self.cal_dict[cur_date] = DayType.AWD
+                cur_date = cur_date + relativedelta(days=-1)
+            # we found the day, set 6 days of finals
+            while day_cnt < 6: # 6 days of finals
+                if cur_date.weekday() != 6: # not sunday
+                    self.cal_dict[cur_date] = DayType.FINALS
+                    day_cnt += 1
+                cur_date = cur_date + relativedelta(days=-1)
+            start_of_fall_finals = cur_date + relativedelta(days=1)
+            
+        # Fill ID through start of Fall Finals
+        fall_id_cnt = 0
         cur_date = self.fall_semester_start
-        while id_cnt < 150:
+        while cur_date < start_of_fall_finals:
             if self.cal_dict[cur_date] == DayType.NONE and (cur_date.weekday() != 6 and cur_date.weekday() != 5):
                 self.cal_dict[cur_date] = DayType.ID
-                id_cnt += 1
+                fall_id_cnt += 1
             cur_date = cur_date + relativedelta(days=1)
+        print(f"Fall IDs: {fall_id_cnt}")
+        # goto end of winter session
+        cur_date = self.winter_session_end
+        cur_date = cur_date + relativedelta(days=1)
         
-        # TODO: Compute start of Winter Semester
+        # CALCULATE START OF SPRING SEMESTER 
+        # (must start on or after Jan 15, or 16 if leap year)
+        is_leap_year = date(self.start_date.year+1, 1, 1).year % 4 == 0
+        spring_start_date = date(self.start_date.year+1, 1, 15)
+        if is_leap_year:
+            spring_start_date = date(self.start_date.year+1, 1, 16)
+        if self.inputs.MLK_spring:
+            # set spring start date to after MLK
+            spring_start_date = self.us_holidays.get_named("Martin Luther King Jr. Day")[1] + relativedelta(days=1)
+        while cur_date < spring_start_date:
+            # set days to start of spring semester as AWD -- TODO: check if correct
+            if not is_weekend(cur_date) and self.cal_dict[cur_date] == DayType.NONE:
+                self.cal_dict[cur_date] = DayType.AWD
+            cur_date = cur_date + relativedelta(days=1)
+        while is_weekend(cur_date):
+            cur_date = cur_date + relativedelta(days=1)
+        self.spring_semester_start = cur_date
+        
+        # Fill ID through Spring Finals
+        spring_id_cnt = 0
+        min_remaining_ids = num_id_days - fall_id_cnt
+        cur_date = self.spring_semester_start
+        while spring_id_cnt < min_remaining_ids:
+            if self.cal_dict[cur_date] == DayType.NONE and (cur_date.weekday() != 6 and cur_date.weekday() != 5):
+                self.cal_dict[cur_date] = DayType.ID
+                spring_id_cnt += 1
+            cur_date = cur_date + relativedelta(days=1)
+        print(f"Spring IDs: {spring_id_cnt}")
+        # this is the spring final exam start date
+        spring_final_exam_start = cur_date 
+        # FILL IN SPRING FINAL EXAMS HERE
         
         return True
     
-    def compute_finals(self, monday_fall_final : bool = True, monday_spring_final : bool = True) -> bool:
-        """ Compute Fall and Spring Final Exams Weeks (6 days)"""
-        # ### FALL FINALS    
-        # # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
-        # christmas_date = self.us_holidays.get_named("Christmas Day")[0]
-        # christmas_weekday = christmas_date.weekday()
-        # # Calculate the date of the Monday in the week before Christmas
-        # monday_before_christmas = christmas_date - timedelta(days=christmas_weekday + 7)
-        # for i in range (5):
-        #     cur_date = monday_before_christmas + relativedelta(days=i)
-        #     self.cal_dict[cur_date] = DayType.FINALS
-        # if monday_fall_final:
-        #     cur_date = cur_date + relativedelta(days=1)
-        #     self.cal_dict[cur_date] = DayType.FINALS
-        # else:
-        #     # get preceeding saturday
-        #     cur_date = cur_date + relativedelta(days=-6)
-        #     self.cal_dict[cur_date] = DayType.FINALS
-        ### FALL FINALS    
-        # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
-        christmas_date = self.us_holidays.get_named("Christmas Day")[0]
-        days_before = 0
-        fall_end_date = christmas_date
+    # NO LONGER NEEDED
+    # def compute_finals(self, monday_fall_final : bool = True, monday_spring_final : bool = True) -> bool:
+    #     """ Compute Fall and Spring Final Exams Weeks (6 days)"""
+    #     # ### FALL FINALS    
+    #     # # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
+    #     # christmas_date = self.us_holidays.get_named("Christmas Day")[0]
+    #     # christmas_weekday = christmas_date.weekday()
+    #     # # Calculate the date of the Monday in the week before Christmas
+    #     # monday_before_christmas = christmas_date - timedelta(days=christmas_weekday + 7)
+    #     # for i in range (5):
+    #     #     cur_date = monday_before_christmas + relativedelta(days=i)
+    #     #     self.cal_dict[cur_date] = DayType.FINALS
+    #     # if monday_fall_final:
+    #     #     cur_date = cur_date + relativedelta(days=1)
+    #     #     self.cal_dict[cur_date] = DayType.FINALS
+    #     # else:
+    #     #     # get preceeding saturday
+    #     #     cur_date = cur_date + relativedelta(days=-6)
+    #     #     self.cal_dict[cur_date] = DayType.FINALS
+    #     ### FALL FINALS    
+    #     # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
+    #     christmas_date = self.us_holidays.get_named("Christmas Day")[0]
+    #     days_before = 0
+    #     fall_end_date = christmas_date
 
-        # Leave at least 4 AWD for grading before Christmas
-        while days_before < 4:
-            fall_end_date = fall_end_date + relativedelta(days=-1)
-            if fall_end_date.weekday() < 5:  # 0-4 denotes Monday to Friday
-                days_before += 1
+    #     # Leave at least 4 AWD for grading before Christmas
+    #     while days_before < 4:
+    #         fall_end_date = fall_end_date + relativedelta(days=-1)
+    #         if fall_end_date.weekday() < 5:  # 0-4 denotes Monday to Friday
+    #             days_before += 1
         
-        cur_date = fall_end_date + relativedelta(days=-7) # sets at least 4 days before Christmas for grading
-        christmas_weekday = christmas_date.weekday()
-        # Calculate the date of the Monday in the week before Christmas
-        cnt = 0
-        while cnt < 5:
-            if cur_date.weekday() != 6:
-                cnt += 1
-                self.cal_dict[cur_date] = DayType.FINALS
-            cur_date = cur_date + relativedelta(days=1)
-        # if preceeding:
-        #     # get preceeding saturday
-        #     cur_date = cur_date + relativedelta(days=-6)
-        #     self.cal_dict[cur_date] = DayType.FINALS
-        # else:
-        #     cur_date = cur_date + relativedelta(days=1)
-        #     self.cal_dict[cur_date] = DayType.FINALS
+    #     cur_date = fall_end_date + relativedelta(days=-7) # sets at least 4 days before Christmas for grading
+    #     christmas_weekday = christmas_date.weekday()
+    #     # Calculate the date of the Monday in the week before Christmas
+    #     cnt = 0
+    #     while cnt < 5:
+    #         if cur_date.weekday() != 6:
+    #             cnt += 1
+    #             self.cal_dict[cur_date] = DayType.FINALS
+    #         cur_date = cur_date + relativedelta(days=1)
+    #     # if preceeding:
+    #     #     # get preceeding saturday
+    #     #     cur_date = cur_date + relativedelta(days=-6)
+    #     #     self.cal_dict[cur_date] = DayType.FINALS
+    #     # else:
+    #     #     cur_date = cur_date + relativedelta(days=1)
+    #     #     self.cal_dict[cur_date] = DayType.FINALS
         
-        ### SPRING FINALS
+    #     ### SPRING FINALS
         
-        ### TODO: SPRING FINALS
+    #     ### TODO: SPRING FINALS
         
-        return True
+    #     return True
     
     def compute_spring_break(self, combine_cc_day=True) -> bool:
         """ Calculates spring break """
@@ -273,19 +348,23 @@ class CalYear:
                 self.cal_dict[spring_break_start + relativedelta(days=i)] = DayType.NO_CLASS_CAMPUS_OPEN
         return True
 
-    def compute_intersessions(self, winter_sess_len = 13) -> bool:
+    def compute_intersessions(self, winter_sess_len = 12) -> bool:
         """ Calculates Winter and Summer Session """
         # Calculate Winter Session, starts after New Years
         # 12 days min, 15 days maximum
         New_Years = date(self.start_date.year+1, 1, 1)
         wnt_cnt = 1
-        cur_date = New_Years + relativedelta(days=1)
-        while (wnt_cnt < winter_sess_len):
-            if (cur_date.weekday() != 6 and cur_date.weekday() != 5) and self.cal_dict[cur_date] == DayType.NONE:
+        cur_date = New_Years 
+        self.winter_session_start = cur_date + relativedelta(days=1)
+        if self.inputs.limit_winter_session:
+            winter_sess_len = 10
+        while (wnt_cnt <= winter_sess_len):
+            cur_date = cur_date + relativedelta(days=1)
+            if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
                 self.cal_dict[cur_date] = DayType.WINTER_SESSION
                 wnt_cnt += 1
-            cur_date = cur_date + relativedelta(days=1)
-
+        self.winter_session_end = cur_date
+        
         # Calculate Summer Session, starts the first work day in June (12 weeks)
         first_day_june = date(self.start_date.year+1,6,1)
         first_weekday_june = first_day_june.weekday()
@@ -294,7 +373,7 @@ class CalYear:
         first_weekday_date = first_day_june + timedelta(days=days_to_add)
         for i in range(84): # 84 days is 12 weeks
             cur_date = first_weekday_date + relativedelta(days=i)
-            if (cur_date.weekday() != 6 and cur_date.weekday() != 5) and self.cal_dict[cur_date] == DayType.NONE:
+            if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
                 self.cal_dict[cur_date] = DayType.SUMMER_SESSION
         return True
         
@@ -515,7 +594,7 @@ class CalYear:
         im = Image.open('test_legend.png')
         return im
 
-def add_weekdays(start_date, num_weekdays):
+def add_weekdays(start_date : date, num_weekdays: int) -> date:
     current_date = start_date
     while num_weekdays > 0:
         # Increment the current date by one day
@@ -524,3 +603,9 @@ def add_weekdays(start_date, num_weekdays):
         if current_date.weekday() < 5:
             num_weekdays -= 1
     return current_date
+
+def is_weekend(the_date : date) -> bool:
+    if the_date.weekday() < 5:
+        return False
+    return True
+    
