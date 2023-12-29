@@ -9,7 +9,6 @@ This project encompasses the design and deployment of the official Academic Cale
 - **Multiprocessing**: Leverages Python's multiprocessing capabilities for enhanced performance.
 - **Dynamic Calendar Generation**: Programmatic construction of calendars with customization options.
 - **Data Visualization**: Utilizes PIL (Python Imaging Library) for visualizing calendars and Streamlit along with Plotly for front-end visualizations.
-- **Optimized for Performance**: Implements optimized algorithms to improve runtime efficiency.
 
 
 ## How to Launch Back-end:
