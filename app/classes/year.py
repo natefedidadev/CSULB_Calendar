@@ -9,6 +9,19 @@ from io import BytesIO
 from enum import Enum
 from typing import Optional
 import multiprocessing as mp
+import random
+from typing import Dict, Any
+import hashlib
+import json
+
+class Day(Enum):
+    MONDAY = 0
+    TUESDAY = 1
+    WEDNESDAY = 2
+    THURSDAY = 3
+    FRIDAY = 4
+    SATURDAY = 5
+    SUNDAY = 6
 
 class Calendar_Input(BaseModel):
     month: int
@@ -19,11 +32,10 @@ class Calendar_Input(BaseModel):
     monday_fall: bool
     extended_fall: bool
     monday_final: bool
-    summer_fall_difference: bool
+    summer_sessession_start: bool
     cesar_chavez: bool
     monday_spring_final: bool
     non_monday_commencement: bool
-    memorial_commencement: bool
     limit_winter_session: bool
     MLK_spring: bool
     
@@ -43,7 +55,6 @@ class DayType(Enum):
     VOID = 10
 
 class CalYear:
-    
     def __init__(self, inputs : Calendar_Input, font_path = "fonts/OpenSans-Regular.ttf",font_path_bold = "fonts/OpenSans-Bold.ttf"):
         self.legend_data = {
             "None": "#FFFFFF",
@@ -56,60 +67,83 @@ class CalYear:
             "Summer Session": "#c5e0b4",
             "Winter Session": "#cfcfcf"
         }
-        # TODO: look into cesar chavez day observed
-        self.holiday_list = ['Martin Luther King Jr. Day', 'Labor Day', 'Thanksgiving', 'Day After Thanksgiving', 'New Year\'s Day', 'New Year\'s Day (Observed)', 'Independence Day', 'Independence Day (Observed)', 'Cesar Chavez Day', 'Cesar Chavez Day (Observed)', 'Veterans Day', 'Veterans Day (Observed)', 'Christmas Day', 'Christmas Day (Observed)', 'Memorial Day']
+        self.holiday_list = ['Martin Luther King Jr. Day', 'Labor Day', 'Thanksgiving', 'Day After Thanksgiving', 'New Year\'s Day', 'New Year\'s Day (Observed)', 'Independence Day', 'Independence Day (Observed)', 'Cesar Chavez Day', 'Cesar Chavez Day (Observed)', 'Veterans Day', 'Veterans Day (Observed)', 'Christmas Day', 'Christmas Day (Observed)', 'Memorial Day', 'Juneteenth National Independence Day']
         self.font_size = 22
         self.small_font_size = 18
         self.font = ImageFont.truetype(font_path_bold, self.font_size)
         self.small_font = ImageFont.truetype(font_path, self.small_font_size)
         self.small_font_bold = ImageFont.truetype(font_path_bold, self.small_font_size)
-        self.cal_dict = {}
-        self.holiday_days = {}
+        self.holiday_days : dict = {}
         self.us_holidays = holidays.country_holidays('US') + holidays.country_holidays('US','CA') + holidays.country_holidays('US','VI')
+        self.day_id_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0},
+                                   "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0}}
+        self.day_awd_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0},
+                                   "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0}}
 
         self.inputs = inputs
         self.start_date = date(inputs.year, inputs.month, inputs.day)
-        
+        self.valid = True
+
+        if self.start_date < date(inputs.year, 8, 15) or self.start_date >= date(inputs.year, 9, 1):
+            self.valid = False
+            return
+
+        # Instantiate empty stats dict
+        self.reset()
+        self.setup_calendar()
+
+    def reset(self):
+        self.month_stats : dict = {}
+        self.cal_dict : dict = {}
+        self.day_id_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0},
+                                   "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0}}
+        self.day_awd_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0},
+                                   "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0}}
         # Important dates
         self.fall_semester_start : date = None
         self.spring_semester_start : date = None
+        self.commencement_end : date = None
         self.summer_session_start : date = None
         self.winter_session_start : date = None
         self.winter_session_end : date = None
+        self.pre_fall_semester_start: date = None
+        self.convocation_day: date = None
+        self.commencement_start: date = None
+        self.summer_session_id: int = 0
+        self.winter_session_id: int = 0
+        self.num_awd: int = 0
+        self.num_id: int = 0
 
-        self.setup_calendar()
-
+        cur_date = date(self.start_date.year, self.start_date.month, 1)
+        for _ in range(13):
+            self.month_stats[cur_date] = {"ID": 0, "AWD": 0, "SUM": 0, "WIN": 0}
+            cur_date = cur_date + relativedelta(months=1)
     
-    async def gen_schedule(self):
+    def gen_schedule(self, awd: int = 170, id: int = 145, convocation: int = 2, winter: int = 12) -> Image and str:
         # 170 <= Acadmeic Work Days (AWD) <= 180
         # 145 <= Instructional Days (ID) <= 149
         # Avoid starting a semester on a Friday.
-                 
+        self.reset()  
+        self.setup_calendar()      
         # clear current calendar list
-        current_calendar = []
-
-        # Calc semester start day
-        sem_start_date = self.start_date
-        if self.start_date.weekday() == 4: # Friday
-            # Calculate the timedelta to add to the input_date to get to the next Monday
-            days_until_monday = (7 - self.start_date.weekday()) % 7
-            sem_start_date = self.start_date + timedelta(days=days_until_monday)   
+        current_calendar: list[CalMonth] = []
         
-        # Convocation Date
-        days_until_friday = (4 - sem_start_date.weekday() + 7) % 7
-        convocation = sem_start_date + timedelta(days=days_until_friday)
-        
+        # Test if start date is valid weekday and not on the weekend
+        if is_weekend(self.start_date):
+            print("ERROR: cannot begin calendar on a weekend")
+            return None, None
+        # Compute Validity tests
         if not self.compute_spring_break(combine_cc_day=self.inputs.cesar_chavez):
-            return 
-        if not self.compute_intersessions():
-            return
-        if not self.compute_id():
-            return
-        #if not self.compute_finals(self.inputs.monday_final, self.inputs.monday_spring_final):
-        #    return
-        if not self.compute_awd():
-            return
-        
+            return None, None
+        if not self.compute_winter_session(winter):
+            return None, None
+        if not self.compute_id(id, convocation):
+            return None, None
+        if not self.compute_summer_session():
+            return None, None
+        if not self.compute_awd(awd):
+            return None, None
+            
         # Build calendar year starting at start date
         for i in range(13):
             cur_date = self.start_date + relativedelta(months=i)
@@ -117,12 +151,6 @@ class CalYear:
 
             if cmonth.month == self.start_date.month:
                 pass
-                # AWD until Convocation calculator
-                # if cur_date.month == start_date.month and cur_date.year == start_date.year:
-                #     for j in range(convocation.day - sem_start_date.day + 1):
-                #         cmonth.set_day_bgcolor(sem_start_date.day+j, self.legend_data["AWD"])
-                #     cmonth.set_day_bold(convocation.day)
-
             current_calendar.append(cmonth)
         
         # Color the days based on type
@@ -144,50 +172,131 @@ class CalYear:
                     current_calendar[i].set_day_bold(cur_day.day)
                 elif cur_day in self.cal_dict and DayType.SUMMER_SESSION == self.cal_dict[cur_day]:
                     current_calendar[i].set_day_bgcolor(cur_day.day,self.legend_data["Summer Session"])
-                cur_day = cur_day + relativedelta(days=1)
+                elif cur_day in self.cal_dict and DayType.CONVOCATION == self.cal_dict[cur_day]:
+                    current_calendar[i].set_day_bgcolor(cur_day.day,self.legend_data["Convocation"])
+                elif cur_day in self.cal_dict and DayType.COMMENCEMENT == self.cal_dict[cur_day]:
+                    current_calendar[i].set_day_bgcolor(cur_day.day,self.legend_data["Commencement"])
+                cur_day = cur_day + timedelta(days=1)
 
-        return await self.adraw(current_calendar)
+            #note = f"AWD={self.month_stats[current_calendar[i].get_month()]['AWD']}, ID={self.month_stats[current_calendar[i].get_month()]['ID']}"
+            note = ""
+            if self.month_stats[current_calendar[i].get_month()]['AWD']:
+                note += f"AWD={self.month_stats[current_calendar[i].get_month()]['AWD']}"
+            if self.month_stats[current_calendar[i].get_month()]['ID']:
+                note += f" ID={self.month_stats[current_calendar[i].get_month()]['ID']}"
+            if self.month_stats[current_calendar[i].get_month()]['SUM']:
+                note += f" SUM={self.month_stats[current_calendar[i].get_month()]['SUM']}"
+            if self.month_stats[current_calendar[i].get_month()]['WIN']:
+                note += f" WIN={self.month_stats[current_calendar[i].get_month()]['WIN']}"
+            current_calendar[i].set_month_note(note)
+
+        current_calendar[(self.fall_semester_start.month+5)%13].set_day_bold_outline(self.fall_semester_start.day)
+        current_calendar[(self.spring_semester_start.month-1+5)%13].set_day_bold_outline(self.spring_semester_start.day)
+        current_calendar[(self.summer_session_start.month-1+5)%13].set_day_bold_outline(self.summer_session_start.day)
+        return self.draw(current_calendar), self.dict_hash(self.cal_dict)
         # compute AWD
 
-    #TODO: Optimize / change this function
-    def compute_awd(self) -> bool:
+    def compute_awd(self, num_awd_days: int = 170) -> bool | int:
         """ AWD must be between 170 - 180 """
-        cur_date = self.start_date
-        awd_cnt = 0
-        christmas = date(self.start_date.year, 12, 25) # self.us_holidays.get_named("Christmas Day (observed)")[2]
-
-        # Calculate the date two weeks before Christmas
-        two_weeks_before_christmas = christmas - timedelta(weeks=1)
-
-        # weekday() returns 0 for Monday, 1 for Tuesday, and so on
-        days_to_go_back = two_weeks_before_christmas.weekday()
-        nearest_monday = two_weeks_before_christmas - timedelta(days=days_to_go_back)
-        
-        # For Fall Semester, While the current date is before Christmas
-        while cur_date < date(self.start_date.year+1, self.start_date.month+1, self.start_date.day):
-            # if current day isn't a Sunday, Saturday, or is a US Holiday
-            if (cur_date.weekday() != 6 and cur_date.weekday() != 5) and awd_cnt <= 180:
-                if self.cal_dict[cur_date] in [DayType.ID, DayType.AWD, DayType.FINALS]:
-                    # these days are also AWD
-                    awd_cnt += 1
-                elif self.cal_dict[cur_date] == DayType.NONE:
-                    self.cal_dict[cur_date] = DayType.AWD
-                    awd_cnt += 1
-                    
-            cur_date = cur_date + relativedelta(days=1)
-        return True
-    
-    def compute_id(self, num_id_days:int = 145) -> bool:
-        """ Compute Instructional Days (ID) """
-        # Total for Fall and Spring 145-149
-        # Calc semester start day
-        self.fall_semester_start = add_weekdays(self.start_date, 5)
-
-        # Fall Semester must start between Aug 17 and Sep 1
-        if not (date(self.start_date.year, 8, 17) <= self.fall_semester_start <= date(self.start_date.year, 9, 1)):
-            print("Error in Semester Start Date")
+        if num_awd_days < 170 or num_awd_days > 180:
             return False
 
+        cur_date = self.start_date
+        self.num_awd = 0
+        # christmas = date(self.start_date.year, 12, 25) # self.us_holidays.get_named("Christmas Day (observed)")[2]
+
+        # For the week before instructional days start
+        prelim_days_list = []
+        while cur_date < self.fall_semester_start:
+            # if current day isn't a Sunday, Saturday, or is a US Holiday
+            if not is_weekend(cur_date):
+                if self.cal_dict[cur_date] == DayType.NONE:
+                    self.cal_dict[cur_date] = DayType.AWD
+                    if cur_date <= self.fall_semester_start + relativedelta(days=-2):
+                        prelim_days_list.append(cur_date)
+                        
+                self.num_awd += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["AWD"] += 1
+                self.calc_awd_days(cur_date)
+            cur_date = cur_date + relativedelta(days=1)
+
+        if self.convocation_day == None:
+            self.convocation_day = random.choice(prelim_days_list)
+            self.cal_dict[self.convocation_day] = DayType.CONVOCATION
+        else:
+            self.calc_awd_days(self.convocation_day)
+        # self.month_stats[date(cur_date.year, cur_date.month, 1)]["AWD"] += 1
+        # self.num_awd +=1    
+        
+        # For Fall Semester, While the current date is before Christmas
+        # while cur_date < date(self.start_date.year+1, self.start_date.month+1, self.start_date.day):
+            # if current day isn't a Sunday, Saturday, or is a US Holiday
+        while self.num_awd < num_awd_days:
+            if cur_date >= self.summer_session_start:
+                print("ERROR: AWD goes into summer session")
+                return False
+            if self.cal_dict[cur_date] in [DayType.ID, DayType.AWD, DayType.FINALS, DayType.CONVOCATION, DayType.COMMENCEMENT]:
+                # these days are also AWD
+                self.num_awd += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["AWD"] += 1
+                self.calc_awd_days(cur_date)
+            elif not is_weekend(cur_date) and self.cal_dict[cur_date] == DayType.NONE:
+                self.cal_dict[cur_date] = DayType.AWD
+                self.num_awd += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["AWD"] += 1
+                self.calc_awd_days(cur_date)
+                
+            cur_date = cur_date + relativedelta(days=1)
+
+        if cur_date <= self.commencement_end:
+            print("ERROR: Not enough AWD to build Calendar")
+            return False
+        
+        if not is_weekend(cur_date) and self.cal_dict[cur_date] == DayType.NONE:
+            print("ERROR: Gap between end of spring and start of summer")
+            return False
+
+        # if not (is_weekend(cur_date) or self.cal_dict[cur_date] == self.summer_session_start or self.cal_dict[cur_date] == DayType.AWD):
+        #     print("ERROR: Not enough AWD to finish commencement")
+        #     return False
+
+        if self.cal_dict[self.winter_session_end + relativedelta(days=1)] == DayType.AWD:
+            print("ERROR: Spring cannot start on a Friday")
+            return False
+        
+        return self.num_awd
+    
+    def compute_id(self, num_id_days:int = 145, num_convocation_days = 2) -> bool:
+        """ Compute Instructional Days (ID) """
+        # Total for Fall and Spring 145-149
+        if num_id_days < 145 or num_id_days > 149:
+            return False
+        self.num_id = 0
+        
+        """ FALL SEMESTER START DATE """
+        # We need to first figure out the convocation day.
+        if self.inputs.friday_convocation:
+            # get the next friday from the start date
+            days_until_friday = (4 - self.start_date.weekday() + 7) % 7
+            self.convocation_day = self.start_date + relativedelta(days=days_until_friday)
+            self.cal_dict[self.convocation_day] = DayType.CONVOCATION
+        
+        self.fall_semester_start = add_weekdays(self.start_date, num_convocation_days)
+
+        # If Fall semester start date is a friday, push to monday
+        if self.fall_semester_start.weekday() == 4:
+            self.fall_semester_start = self.fall_semester_start + relativedelta(days=3)
+        
+        if self.convocation_day:
+            if self.fall_semester_start < self.convocation_day:
+                print("ERROR: Fall Semester start day must be after convocation day")
+                return False
+        
+        # NEW CODE, return FALSE if fall semester doesn't start on a monday
+        if self.inputs.monday_fall and self.fall_semester_start.weekday() != 0:
+            print("ERROR: Fall Semester start day must be a monday")
+            return False
+        
         # Leave at least 4 AWD for grading before Christmas (HARD RULE?)
         christmas_date = self.us_holidays.get_named("Christmas Day")[0]
         cur_date = christmas_date
@@ -233,13 +342,22 @@ class CalYear:
             if self.cal_dict[cur_date] == DayType.NONE and (cur_date.weekday() != 6 and cur_date.weekday() != 5):
                 self.cal_dict[cur_date] = DayType.ID
                 fall_id_cnt += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["ID"] += 1
+                self.calc_id_days('fall', cur_date)
+
             cur_date = cur_date + relativedelta(days=1)
         print(f"Fall IDs: {fall_id_cnt}")
         # goto end of winter session
         cur_date = self.winter_session_end
         cur_date = cur_date + relativedelta(days=1)
         
-        # CALCULATE START OF SPRING SEMESTER 
+        if self.inputs.even:
+            for key in self.day_id_count['fall'].keys():
+                if self.day_id_count['fall'][key] < 14 or self.day_id_count['fall'][key] > 15:
+                    print("ERROR: instructional for fall are not equal")
+                    return False
+
+        """ SPRING SEMESTER START DATE """
         # (must start on or after Jan 15, or 16 if leap year)
         is_leap_year = date(self.start_date.year+1, 1, 1).year % 4 == 0
         spring_start_date = date(self.start_date.year+1, 1, 15)
@@ -253,10 +371,15 @@ class CalYear:
             if not is_weekend(cur_date) and self.cal_dict[cur_date] == DayType.NONE:
                 self.cal_dict[cur_date] = DayType.AWD
             cur_date = cur_date + relativedelta(days=1)
-        while is_weekend(cur_date):
+        while is_weekend(cur_date) or self.cal_dict[cur_date] != DayType.NONE:
+            # we need to keep incrementing the day pointer until we get to a valid start date for spring
             cur_date = cur_date + relativedelta(days=1)
         self.spring_semester_start = cur_date
         
+        # If Spring semester start date is a friday, push to monday
+        if self.spring_semester_start.weekday() == 4:
+            self.spring_semester_start = self.spring_semester_start + relativedelta(days=3)
+
         # Fill ID through Spring Finals
         spring_id_cnt = 0
         min_remaining_ids = num_id_days - fall_id_cnt
@@ -265,90 +388,104 @@ class CalYear:
             if self.cal_dict[cur_date] == DayType.NONE and (cur_date.weekday() != 6 and cur_date.weekday() != 5):
                 self.cal_dict[cur_date] = DayType.ID
                 spring_id_cnt += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["ID"] += 1
+                self.calc_id_days('spring', cur_date)
             cur_date = cur_date + relativedelta(days=1)
-        print(f"Spring IDs: {spring_id_cnt}")
-        # this is the spring final exam start date
+        # CHECK: spring end date must be May 31st or sooner (cur_date is now +1)
+        if cur_date > date(cur_date.year, 6, 1):
+            print("ERROR: Spring semester ended past May 31st")
+            return False
+        
+        # This is the spring final exam start date
         spring_final_exam_start = cur_date 
-        # FILL IN SPRING FINAL EXAMS HERE
-        
-        return True
-    
-    # NO LONGER NEEDED
-    # def compute_finals(self, monday_fall_final : bool = True, monday_spring_final : bool = True) -> bool:
-    #     """ Compute Fall and Spring Final Exams Weeks (6 days)"""
-    #     # ### FALL FINALS    
-    #     # # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
-    #     # christmas_date = self.us_holidays.get_named("Christmas Day")[0]
-    #     # christmas_weekday = christmas_date.weekday()
-    #     # # Calculate the date of the Monday in the week before Christmas
-    #     # monday_before_christmas = christmas_date - timedelta(days=christmas_weekday + 7)
-    #     # for i in range (5):
-    #     #     cur_date = monday_before_christmas + relativedelta(days=i)
-    #     #     self.cal_dict[cur_date] = DayType.FINALS
-    #     # if monday_fall_final:
-    #     #     cur_date = cur_date + relativedelta(days=1)
-    #     #     self.cal_dict[cur_date] = DayType.FINALS
-    #     # else:
-    #     #     # get preceeding saturday
-    #     #     cur_date = cur_date + relativedelta(days=-6)
-    #     #     self.cal_dict[cur_date] = DayType.FINALS
-    #     ### FALL FINALS    
-    #     # Calculate the day of the week for Christmas (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
-    #     christmas_date = self.us_holidays.get_named("Christmas Day")[0]
-    #     days_before = 0
-    #     fall_end_date = christmas_date
+        if spring_final_exam_start.weekday() == 6:
+            spring_final_exam_start = spring_final_exam_start + relativedelta(days=1)
+        remaining_id_buffer = 149 - num_id_days
+        if self.inputs.monday_spring_final == True:
+            while spring_final_exam_start.weekday() != 0:
+                # TODO: any extra days will be marked as instructional days
+                if not is_weekend(spring_final_exam_start) and remaining_id_buffer > 0:
+                    self.cal_dict[spring_final_exam_start] = DayType.ID
+                    remaining_id_buffer -= 1
+                    spring_id_cnt += 1
+                    self.month_stats[date(cur_date.year, cur_date.month, 1)]["ID"] += 1
+                    self.calc_id_days('spring', cur_date)
+                spring_final_exam_start = spring_final_exam_start + relativedelta(days=1)
+        print(f"Spring IDs: {spring_id_cnt}")
 
-    #     # Leave at least 4 AWD for grading before Christmas
-    #     while days_before < 4:
-    #         fall_end_date = fall_end_date + relativedelta(days=-1)
-    #         if fall_end_date.weekday() < 5:  # 0-4 denotes Monday to Friday
-    #             days_before += 1
+        if self.inputs.even:
+            for key in self.day_id_count['spring'].keys():
+                if self.day_id_count['spring'][key] < 14 or self.day_id_count['spring'][key] > 15:
+                    print("ERROR: instructional for spring are not equal")
+                    return False
+
+        # FILL IN SPRING FINAL EXAMS HERE
+        day_cnt = 0
+        cur_date = spring_final_exam_start
+        while day_cnt < 6:
+            # If the day is not a Sunday
+            if cur_date.weekday() != 6:
+                self.cal_dict[cur_date] = DayType.FINALS
+                day_cnt += 1
+            cur_date = cur_date + relativedelta(days=1)
         
-    #     cur_date = fall_end_date + relativedelta(days=-7) # sets at least 4 days before Christmas for grading
-    #     christmas_weekday = christmas_date.weekday()
-    #     # Calculate the date of the Monday in the week before Christmas
-    #     cnt = 0
-    #     while cnt < 5:
-    #         if cur_date.weekday() != 6:
-    #             cnt += 1
-    #             self.cal_dict[cur_date] = DayType.FINALS
-    #         cur_date = cur_date + relativedelta(days=1)
-    #     # if preceeding:
-    #     #     # get preceeding saturday
-    #     #     cur_date = cur_date + relativedelta(days=-6)
-    #     #     self.cal_dict[cur_date] = DayType.FINALS
-    #     # else:
-    #     #     cur_date = cur_date + relativedelta(days=1)
-    #     #     self.cal_dict[cur_date] = DayType.FINALS
-        
-    #     ### SPRING FINALS
-        
-    #     ### TODO: SPRING FINALS
-        
-    #     return True
+        # Calculate commencment start date
+        while self.commencement_start == None:
+            if not is_weekend(cur_date):
+                if self.inputs.non_monday_commencement:
+                    if cur_date.weekday() == 1:
+                        self.commencement_start = cur_date
+                else:
+                    self.commencement_start = cur_date
+            cur_date = cur_date + relativedelta(days=1)
+
+        cur_date = self.commencement_start
+
+        day_cnt = 0
+        while day_cnt < 4: 
+            if not is_weekend(cur_date):
+                self.cal_dict[cur_date] = DayType.COMMENCEMENT
+                day_cnt += 1
+            cur_date = cur_date + relativedelta(days=1)
+
+        self.commencement_end = cur_date + relativedelta(days=-1)
+
+        self.num_id = fall_id_cnt + spring_id_cnt
+        # #CHECK: commencement goes into summer session
+        # cur_date = cur_date + relativedelta(days=-1)
+        # if cur_date >= self.summer_session_start:
+        #     print("ERROR: commencement overran summer session start date")
+        #     return False
+        return True
     
     def compute_spring_break(self, combine_cc_day=True) -> bool:
         """ Calculates spring break """
-        cesar_date = self.us_holidays.get_named("Cesar Chavez Day")[1]
+        for cd in self.us_holidays.get_named("Cesar Chavez Day"):
+            # get cesar day, if its a weekend, get observed date
+            if not is_weekend(cd) and cd.year == (self.start_date.year + 1):
+                cesar_date = cd
         if combine_cc_day:
-            # Calculate Spring Break (5 consecutive days w/o classes) - LBCC week preceeding easter
-            easter_monday_following_year = self.us_holidays.get_named("Easter Monday")[1]
-            for i in range(3,8):
-                self.cal_dict[easter_monday_following_year + relativedelta(days=-i)] = DayType.NO_CLASS_CAMPUS_OPEN
+            # Cesar Chavez day is always March 31. So make it part of spring break.
+            spring_break_start = get_monday(cesar_date) # get the monday of the week that ceasar chavez falls in
+            cur_date = spring_break_start
+            for i in range(0,5):
+                if cur_date != cesar_date:
+                    self.cal_dict[cur_date] = DayType.NO_CLASS_CAMPUS_OPEN
+                cur_date = cur_date + relativedelta(days=1)
         else:
             # put spring break before cc day
             # Calculate Spring Break (5 consecutive days w/o classes) - LBCC week preceeding easter
             easter_monday_following_year = self.us_holidays.get_named("Easter Monday")[1]
             spring_break_start = easter_monday_following_year + relativedelta(days=-7)
             spring_break_end = easter_monday_following_year + relativedelta(days=-3)
-            if spring_break_start <= cesar_date <= spring_break_end:
+            if spring_break_start <= cesar_date and cesar_date <= spring_break_end:
                 # move spring break up one week
                 spring_break_start = spring_break_start + relativedelta(weeks=-1)
             for i in range(0,5):
                 self.cal_dict[spring_break_start + relativedelta(days=i)] = DayType.NO_CLASS_CAMPUS_OPEN
         return True
 
-    def compute_intersessions(self, winter_sess_len = 12) -> bool:
+    def compute_winter_session(self, winter_sess_len = 12) -> bool:
         """ Calculates Winter and Summer Session """
         # Calculate Winter Session, starts after New Years
         # 12 days min, 15 days maximum
@@ -358,25 +495,57 @@ class CalYear:
         self.winter_session_start = cur_date + relativedelta(days=1)
         if self.inputs.limit_winter_session:
             winter_sess_len = 10
+            self.winter_session_id = winter_sess_len
         while (wnt_cnt <= winter_sess_len):
             cur_date = cur_date + relativedelta(days=1)
             if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
                 self.cal_dict[cur_date] = DayType.WINTER_SESSION
                 wnt_cnt += 1
+                self.winter_session_id += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["WIN"] += 1
         self.winter_session_end = cur_date
-        
-        # Calculate Summer Session, starts the first work day in June (12 weeks)
-        first_day_june = date(self.start_date.year+1,6,1)
-        first_weekday_june = first_day_june.weekday()
-        # Calculate the number of days to add to get to the first weekday
-        days_to_add = (7 - first_weekday_june) % 7
-        first_weekday_date = first_day_june + timedelta(days=days_to_add)
-        for i in range(84): # 84 days is 12 weeks
-            cur_date = first_weekday_date + relativedelta(days=i)
-            if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
-                self.cal_dict[cur_date] = DayType.SUMMER_SESSION
         return True
         
+        # TODO - Might move this to ID()
+
+    def compute_summer_session(self) -> bool:
+        if self.inputs.summer_sessession_start:
+            self.summer_session_start = self.us_holidays.get_named("Memorial Day")[1]
+        else:
+            self.summer_session_start = self.commencement_start + relativedelta(days=4)
+        self.summer_session_start = self.summer_session_start + relativedelta(days=1)
+
+        # Check if summer start date is Friday or Weekend
+        if self.summer_session_start.weekday() >= 4:
+            skip_days = 7 - self.summer_session_start.weekday()
+            self.summer_session_start = self.summer_session_start + relativedelta(days=skip_days)
+        
+        # Check if Holiday
+        if self.cal_dict[self.summer_session_start] == DayType.HOLIDAY:
+            self.summer_session_start = self.summer_session_start + relativedelta(days=1)
+
+        
+        # for i in range(84): # 84 days is 12 weeks
+        #     cur_date = self.summer_session_start + relativedelta(days=i)
+        #     if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
+        #         self.cal_dict[cur_date] = DayType.SUMMER_SESSION
+        #         self.summer_session_id += 1
+        #         self.month_stats[date(cur_date.year, cur_date.month, 1)]["SUM"] += 1
+        # return True
+
+        # Populate Calendar with Summer Session Days for 12 weeks 
+        cur_date = self.summer_session_start
+        summer_session_end = self.summer_session_start + timedelta(weeks=11) + timedelta(days=(6-self.summer_session_start.weekday()))
+        while cur_date <= summer_session_end:
+            if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
+                self.cal_dict[cur_date] = DayType.SUMMER_SESSION
+                self.summer_session_id += 1
+                self.month_stats[date(cur_date.year, cur_date.month, 1)]["SUM"] += 1
+
+            # Move to the next day
+            cur_date += timedelta(days=1)
+        return True
+    
     def setup_calendar(self):
         """ Initialize calendar and setup permanent HOLIDAYS """
         cur_date = self.start_date
@@ -408,7 +577,7 @@ class CalYear:
             self.cal_dict[cur_date] = DayType.VOID
             cur_date = cur_date + relativedelta(days=1)
 
-    async def adraw(self, calendar : list[CalMonth], m_width=350, m_height=350):
+    def draw(self, calendar : list[CalMonth], m_width=350, m_height=350) -> Image:
         # Create a blank canvas (resulting image)
         width, height = 5 * m_width, 4 * m_height + 200  # Size of the resulting image 
         result_image = Image.new("RGB", (width, height), (255, 255, 255))
@@ -418,7 +587,7 @@ class CalYear:
         images = []
         j = 0
         for month in calendar:
-            image = await month.adraw(m_width)
+            image = month.draw(m_width)
             images.append(image)
             months_list.append(month.get_abbr())
 
@@ -431,30 +600,40 @@ class CalYear:
             col = i % grid_size[0]
             position = (col * m_width, row * m_height + 100)
             result_image.paste(image, position)
+        
+        awd_month_fall = []
+        id_month_fall = []
 
-        # TODO update this data
-        awd_month_fall = [12, 21, 22, 19, 19, 42, 41, 32, 49, 39]
-        id_month_fall = [6, 21, 22, 16, 9, 45, 23, 21, 29, 26]
+        draw = ImageDraw.Draw(result_image)
+        draw.text((1100,900), f"Academic Work Days = {self.num_awd}\nInstructional Days = {self.num_id}\nWinter = {self.winter_session_id}\nSummer = {self.summer_session_id}", font=self.font, fill="black")
+        
+        # Populate ID and AWD List with the number of each day type per month
+        cur_date = date(self.start_date.year, self.start_date.month, 1)
+        while cur_date < date(calendar[10].year, calendar[10].month, 1):
+            id_month_fall.append(self.month_stats[cur_date]["ID"])
+            awd_month_fall.append(self.month_stats[cur_date]["AWD"])
+            cur_date = cur_date + relativedelta(months=1)
         
         # Create Month_Table and paste it to result img
-        im = await self.acreate_months_table(months_list[:10], awd_month_fall, id_month_fall)
+        im = self.create_months_table(months_list[:10], awd_month_fall, id_month_fall)
         box = (0, 3*m_height+125)
+        # box = (1100, 2*m_height+150)
         result_image.paste(im, box)
 
-        # TODO Create Day_Table and paste it to result img
-        awd_day_fall = [12, 21, 22, 19, 19, 42, 41, 32, 49, 39, 12, 14]
-        id_day_fall = [6, 21, 22, 16, 9, 45, 23, 21, 29, 26, 12, 14]
-        im = await self.acreate_days_table(awd_day_fall, id_day_fall)
+        # Create Day_Table and paste it to result img
+        awd_day_fall =  list(self.day_awd_count['fall'].values()) + list(self.day_awd_count['spring'].values()) 
+        id_day_fall = list(self.day_id_count['fall'].values()) + [0] + list(self.day_id_count['spring'].values()) + [0]
+        im = self.create_days_table(awd_day_fall, id_day_fall)
         box = (650, 3*m_height+125)
         result_image.paste(im, box)
 
         # reference color_legend and display it
-        im = await self.acreate_table_key(self.legend_data)#self.get_legend_table()
+        im = self.create_table_key(self.legend_data)#self.get_legend_table()
         result_image.paste(im, [width//2-500, 0]) #TODO: Fit more evenly
 
         return result_image        
 
-    async def acreate_table_key(self, legend_data, cell_height=30, padding=5):
+    def create_table_key(self, legend_data, cell_height=30, padding=5):
         # Compute total width based on text length and padding
         total_width = sum([ImageDraw.Draw(Image.new('RGB', (1, 1))).textsize(text, self.small_font)[0] + padding*3 + cell_height for text in legend_data.keys()]) + padding
         # Create a new image with a white background
@@ -483,7 +662,7 @@ class CalYear:
 
         return img
 
-    async def acreate_months_table(self, months: list, awd: list, id: list, table_width: int = 550, cell_height: int = 40, font_size: int = 16) -> bytes:
+    def create_months_table(self, months: list, awd: list, id: list, table_width: int = 550, cell_height: int = 40, font_size: int = 16) -> bytes:
         '''Creates''' 
         # Data for the table
         header = ['Fall', 'AWD', 'ID', 'Spring', 'AWD', 'ID']
@@ -538,7 +717,35 @@ class CalYear:
         im = Image.open(bytes)
         return im
     
-    async def acreate_days_table(self, awd: list, id: list, table_width: int = 550, cell_height: int = 40, font_size: int = 16) -> bytes:
+    def dict_hash(self, dictionary: Dict[str, Any]) -> str:
+        """MD5 hash of a dictionary."""
+        dhash = hashlib.md5()
+        # We need to sort arguments so {'a': 1, 'b': 2} is
+        # the same as {'b': 2, 'a': 1}
+        convert_dict = {
+            "fall_semester_start": self.fall_semester_start.strftime("%m/%d/%Y"),
+            "spring_semester_start": self.spring_semester_start.strftime("%m/%d/%Y"),
+            "summer_session_start": self.summer_session_start.strftime("%m/%d/%Y"),
+            "winter_session_start": self.winter_session_start.strftime("%m/%d/%Y"),
+            "winter_session_end": self.winter_session_end.strftime("%m/%d/%Y"),
+            # "pre_fall_semester_start": self.pre_fall_semester_start.strftime("%m/%d/%Y"),
+            "convocation_day": self.convocation_day.strftime("%m/%d/%Y"),
+            "commencement_start": self.commencement_start.strftime("%m/%d/%Y"),
+            "summer_session_id": self.summer_session_id,
+            "winter_session_id": self.winter_session_id,
+            "num_awd": self.num_awd,
+            "num_id": self.num_id
+                                                                  
+        }
+        # for key in dictionary.keys():
+        #     keystr = key.strftime("%m/%d/%Y")
+        #     convert_dict[keystr] = dictionary[key].value
+        
+        encoded = json.dumps(convert_dict, sort_keys=True).encode()
+        dhash.update(encoded)
+        return dhash.hexdigest()
+    
+    def create_days_table(self, awd: list, id: list, table_width: int = 550, cell_height: int = 40, font_size: int = 16) -> bytes:
         '''Creates''' 
         # Data for the table
         header = ['Fall', 'AWD', 'ID', 'Spring', 'AWD', 'ID']
@@ -593,6 +800,16 @@ class CalYear:
     def get_legend_table(self):
         im = Image.open('test_legend.png')
         return im
+    
+    def calc_id_days(self, semester: str, the_date: date):
+        self.day_id_count[semester][Day(the_date.weekday())] += 1
+
+    def calc_awd_days(self, the_date: date):
+        if the_date < self.spring_semester_start:
+            self.day_awd_count['fall'][Day(the_date.weekday())] += 1
+        else:
+            self.day_awd_count['spring'][Day(the_date.weekday())] += 1
+
 
 def add_weekdays(start_date : date, num_weekdays: int) -> date:
     current_date = start_date
@@ -608,4 +825,13 @@ def is_weekend(the_date : date) -> bool:
     if the_date.weekday() < 5:
         return False
     return True
-    
+
+def get_monday(input_date):
+    # Check if the input_date is already a Monday
+    if input_date.weekday() == 0:  # Monday is represented as 0
+        return input_date
+    else:
+        # Calculate the number of days to subtract to get to the previous Monday
+        days_until_monday = input_date.weekday()
+        monday_date = input_date - timedelta(days=days_until_monday)
+        return monday_date

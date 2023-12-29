@@ -1,6 +1,6 @@
 import calendar
 from PIL import Image, ImageDraw, ImageFont
-
+from datetime import date
 from enum import Enum
 
 class DayType(Enum):
@@ -18,8 +18,8 @@ class Day:
     type : DayType = DayType.NONE
     num : int  = 0
 
+
 class CalMonth:
-    
     def __init__(self, year, month, font: ImageFont, small_font: ImageFont, small_font_bold: ImageFont):
         self.day_colors = {}  # Format: {day: color, ...}
         self.day_bgcolors = {}  # Format: {day: bgcolor, ...}
@@ -34,6 +34,8 @@ class CalMonth:
         self.aspect_ratio = 320 / 300
         self.day_bold = []
         self.day_bold_outline = []
+        # self.awd_cnt = 0
+        # self.id_cnt = 0
 
     def set_day_color(self, day : int, color):
         """ Set the text color for a specific day."""
@@ -54,6 +56,10 @@ class CalMonth:
     def set_month_note(self, text : str):
         """ Append a note for the month """
         self.note = text
+    
+    def get_month(self) -> date:
+        """ Return the first of the month as a date object"""
+        return date(self.year, self.month, 1)
 
     def get_title(self)->str:
         return calendar.month_name[self.month] + " " + str(self.year)
@@ -80,7 +86,7 @@ class CalMonth:
         bbox = draw.textbbox((0, 0), text, font=font)
         return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-    async def adraw(self, width):
+    def draw(self, width):
         image_height = int(width / self.aspect_ratio) 
         scaled_height = 50 * (image_height / 200)
     
@@ -140,6 +146,6 @@ class CalMonth:
                     text_bbox = draw.textbbox(rect_coords, self.note, font=self.small_font)
                     text_w = text_bbox[2] - text_bbox[0]
                     text_h = text_bbox[3] - text_bbox[1]
-                    draw.text((2*(col_width+text_w), scaled_height + row_idx * row_height+(0.5*text_h)), self.note, font=self.small_font, fill="black")
+                    draw.text((2*(col_width), scaled_height + row_idx * row_height+(0.5*text_h)), self.note, font=self.small_font, fill="black")
         return img
         #img.save('calendar.png')
