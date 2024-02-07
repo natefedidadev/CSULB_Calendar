@@ -15,8 +15,8 @@ def build_years_request(dt : datetime, input_dict : dict):
     # Making a POST request
     payload = input_dict
 
-    # response = requests.post("http://172.17.0.5:5000/calendar/build_years", json=payload)
-    response = requests.post("http://127.0.0.1:8000/calendar/build_years_test", json = payload)
+    response = requests.post("http://127.0.0.1:8000/calendar/build_years", json=payload)
+    # response = requests.post("http://127.0.0.1:8000/calendar/build_years_test", json = payload)
 
     if response.status_code == 200:
         result = response.json()
