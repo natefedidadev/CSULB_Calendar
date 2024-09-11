@@ -459,30 +459,43 @@ class CalYear:
         return True
     
     def compute_spring_break(self, combine_cc_day=True) -> bool:
-        """ Calculates spring break """
+        """ Calculates spring break and ensures Cesar Chavez Day is correctly assigned """
+        cesar_date = None
+
+        # Get Cesar Chavez Day, if it's a weekend, get the observed date
         for cd in self.us_holidays.get_named("Cesar Chavez Day"):
-            # get cesar day, if its a weekend, get observed date
-            if not is_weekend(cd) and cd.year == (self.start_date.year + 1):
+            if cd.year == (self.start_date.year + 1):
                 cesar_date = cd
+                if is_weekend(cesar_date):
+                    if cesar_date.weekday() == 5:  # Saturday
+                        cesar_date = cesar_date + relativedelta(days=2)  # Move to Monday
+                    elif cesar_date.weekday() == 6:  # Sunday
+                        cesar_date = cesar_date + relativedelta(days=-2)  # Move to Friday
+                    print(f"Cesar Chavez Day falls on a weekend. Observing it on {cesar_date}.")
+                break  # Ensure we use the first instance found for the correct year
+
+        # If no Cesar Chavez Day is found, raise an error (instead of using a fallback) to catch the issue
+        if cesar_date is None:
+            raise ValueError(f"ERROR: Cesar Chavez Day not found for year {self.start_date.year + 1}. This should not happen.")
+
         if combine_cc_day:
             # Cesar Chavez day is always March 31. So make it part of spring break.
-            spring_break_start = get_monday(cesar_date) # get the monday of the week that ceasar chavez falls in
+            spring_break_start = get_monday(cesar_date)  # Get the Monday of the week that Cesar Chavez falls in
             cur_date = spring_break_start
-            for i in range(0,5):
+            for i in range(0, 5):
                 if cur_date != cesar_date:
                     self.cal_dict[cur_date] = DayType.NO_CLASS_CAMPUS_OPEN
                 cur_date = cur_date + relativedelta(days=1)
         else:
-            # put spring break before cc day
-            # Calculate Spring Break (5 consecutive days w/o classes) - LBCC week preceeding easter
+            # Put spring break before Cesar Chavez Day
             easter_monday_following_year = self.us_holidays.get_named("Easter Monday")[1]
             spring_break_start = easter_monday_following_year + relativedelta(days=-7)
             spring_break_end = easter_monday_following_year + relativedelta(days=-3)
-            if spring_break_start <= cesar_date and cesar_date <= spring_break_end:
-                # move spring break up one week
-                spring_break_start = spring_break_start + relativedelta(weeks=-1)
-            for i in range(0,5):
+            if spring_break_start <= cesar_date <= spring_break_end:
+                spring_break_start = spring_break_start + relativedelta(weeks=-1)  # Move spring break up one week
+            for i in range(0, 5):
                 self.cal_dict[spring_break_start + relativedelta(days=i)] = DayType.NO_CLASS_CAMPUS_OPEN
+
         return True
 
     def compute_winter_session(self, winter_sess_len = 12) -> bool:
