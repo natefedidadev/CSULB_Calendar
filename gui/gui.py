@@ -59,8 +59,15 @@ def main():
         """)
     with st.form("input_form"):
 
-        st.session_state.first_day = st.date_input("Select the first day of fall semester (15th - 30th of August ONLY)", format="MM/DD/YYYY", value=date(2025,8,18))
-        # option = st.selectbox('Select Convocation Day', ('Monday', 'Tuesday', 'Wednesday', "Thursday", "Friday"))
+        # Update the date_input to allow for a broader year range (up to 2050)
+        st.session_state.first_day = st.date_input(
+            "Select the first day of fall semester (15th - 30th of August ONLY)", 
+            format="MM/DD/YYYY", 
+            value=date(2025, 8, 18),  # Default value
+            min_value=date(2025, 8, 15),  # Minimum selectable date
+            max_value=date(2050, 8, 30)   # Maximum selectable date extended to 2050
+        )
+
         st.markdown("""**Select the checkboxes of the soft rules to guarantee (Please select ___)** """)
         c1, c2 = st.columns(2)
         with c1:
@@ -71,7 +78,7 @@ def main():
             monday_final = st.checkbox("Fall semester finals start on a Monday")
             monday_spring_final = st.checkbox("Spring semester finals start on a Monday")
             summer_sessession_start = st.checkbox("Summer Session Starts after Memorial Day")
-        
+
         with c2:
             extended_fall = st.checkbox("Extended Fall break (take off Monday-Wednesday before Thanksgiving)", value=True)
             cesar_chavez = st.checkbox("Put Cesar Chavez Day in Spring Break (after if not selected)", value=True)
@@ -85,7 +92,7 @@ def main():
         input_dict = {
             'year': st.session_state.first_day.year,
             'month': st.session_state.first_day.month,
-            'day': st.session_state.first_day.day, 
+            'day': st.session_state.first_day.day,
             'even':even,
             'friday_convocation':friday_convocation,
             'monday_fall':monday_fall,
