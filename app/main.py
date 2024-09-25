@@ -6,9 +6,12 @@ from .classes.year import CalYear, Calendar_Input
 from fastapi.responses import StreamingResponse
 import base64
 import io
+from io import BytesIO
 import time
 import itertools
 import logging
+import openpyxl
+from openpyxl.styles import PatternFill
 
 app = FastAPI()
 
@@ -166,6 +169,55 @@ def build_years_request(req: Calendar_Input):
 
     return results
 
+def generate_colored_excel_calendar(calyear):
+    wb = openpyxl.Workbook()
+    
+    day_type_colors = {
+        "None": "FFFFFF",  # White
+        "AWD": "CCEFFF",   # Light Blue
+        "ID": "EFEF95",    # Yellow
+        "Convocation": "50E3C2",  # Greenish
+        "Finals": "F8CBAD",  # Peach
+        "No Class, Campus Open": "AE76C7",  # Purple
+        "Commencement": "BD10E0",  # Magenta
+        "Summer Session": "C5E0B4",  # Light Green
+        "Winter Session": "CFCFCF",  # Gray
+    }
+
+    for i, calmonth in enumerate(calyear.months):  # Assuming calyear.months holds months
+        ws = wb.create_sheet(title=f"{calmonth.get_title()}")
+
+        day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        for col, day_name in enumerate(day_names, start=1):
+            ws.cell(row=1, column=col, value=day_name)
+
+        for row, week in enumerate(calmonth.cal, start=2):  
+            for col, day in enumerate(week, start=1):
+                cell = ws.cell(row=row, column=col, value=day if day != 0 else "")
+                
+                day_type = calyear.get_day_type(calmonth.year, calmonth.month, day)  # Get day type
+                if day_type and day_type != "None":
+                    fill_color = PatternFill(start_color=day_type_colors[day_type], end_color=day_type_colors[day_type], fill_type="solid")
+                    cell.fill = fill_color
+
+    if 'Sheet' in wb.sheetnames:
+        del wb['Sheet']
+    
+    excel_stream = BytesIO()
+    wb.save(excel_stream)
+    excel_stream.seek(0)
+
+    return excel_stream
+
+# FastAPI route for downloading the Excel file
+@app.post("/calendar/download_excel_colored")
+async def download_calendar_excel_colored(req: Calendar_Input):
+    calyear = CalYear(req)
+    if calyear.valid:
+        excel_file = generate_colored_excel_calendar(calyear)
+        return StreamingResponse(excel_file, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                                 headers={"Content-Disposition": "attachment; filename=calendar_colored.xlsx"})
+    return {"message": "Invalid Calendar"}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

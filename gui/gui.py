@@ -23,9 +23,16 @@ def build_years_request(dt : datetime, input_dict : dict):
         return result
     else:
         return None
+    
+def download_calendar_as_excel_colored(input_dict):
+    response = requests.post("http://127.0.0.1:8000/calendar/download_excel_colored", json=input_dict)
+    if response.status_code == 200:
+        return response.content
+    return None
 
 def main():
     # Set Default Page Width = WIDE
+    input_dict = None
     st.set_page_config(layout='wide')
 
     # Streamlit Global Environment Variables
@@ -129,10 +136,21 @@ def main():
                                     st.image(img, output_format="PNG")
                                 with col3:
                                     st.write(' ')
+                        
+                    # Show the download button only after results are generated
+                            if st.button(f'Download Excel for Option {i}', key=f'download_button_{i}'):
+                                excel_content = download_calendar_as_excel_colored(input_dict)  # Modify this to handle each option's data if necessary
+                                if excel_content:
+                                    st.download_button(
+                                        label=f"Download Excel for Option {i}",
+                                        data=excel_content,
+                                        file_name=f"calendar_option_{i}.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
                             i += 1
-                    if i <= 1:
-                        st.markdown("""#### No Valid Calendars Found
-                                Please adjust your settings """)
+                    else:
+                        st.markdown("#### No Valid Calendars Found. Please adjust your settings.")
+
 
 if __name__ == '__main__':
     main()
