@@ -83,6 +83,7 @@ class CalYear:
         self.inputs = inputs
         self.start_date = date(inputs.year, inputs.month, inputs.day)
         self.valid = True
+        self.months = []
 
         if self.start_date < date(inputs.year, 8, 15) or self.start_date >= date(inputs.year, 9, 1):
             self.valid = False
@@ -93,6 +94,7 @@ class CalYear:
         self.setup_calendar()
 
     def reset(self):
+        self.months = []
         self.month_stats : dict = {}
         self.cal_dict : dict = {}
         self.day_id_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0},
@@ -532,63 +534,139 @@ class CalYear:
         if self.summer_session_start.weekday() >= 4:
             skip_days = 7 - self.summer_session_start.weekday()
             self.summer_session_start = self.summer_session_start + relativedelta(days=skip_days)
-        
-        # Check if Holiday
-        if self.cal_dict[self.summer_session_start] == DayType.HOLIDAY:
-            self.summer_session_start = self.summer_session_start + relativedelta(days=1)
 
-        
-        # for i in range(84): # 84 days is 12 weeks
-        #     cur_date = self.summer_session_start + relativedelta(days=i)
-        #     if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
-        #         self.cal_dict[cur_date] = DayType.SUMMER_SESSION
-        #         self.summer_session_id += 1
-        #         self.month_stats[date(cur_date.year, cur_date.month, 1)]["SUM"] += 1
-        # return True
+        # Check if Holiday
+        if self.cal_dict.get(self.summer_session_start, DayType.NONE) == DayType.HOLIDAY:
+            self.summer_session_start = self.summer_session_start + relativedelta(days=1)
 
         # Populate Calendar with Summer Session Days for 12 weeks 
         cur_date = self.summer_session_start
-        summer_session_end = self.summer_session_start + timedelta(weeks=11) + timedelta(days=(6-self.summer_session_start.weekday()))
+        summer_session_end = self.summer_session_start + timedelta(weeks=11) + timedelta(days=(6 - self.summer_session_start.weekday()))
         while cur_date <= summer_session_end:
-            if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
+            if (not is_weekend(cur_date)) and self.cal_dict.get(cur_date, DayType.NONE) == DayType.NONE:
                 self.cal_dict[cur_date] = DayType.SUMMER_SESSION
                 self.summer_session_id += 1
                 self.month_stats[date(cur_date.year, cur_date.month, 1)]["SUM"] += 1
 
             # Move to the next day
             cur_date += timedelta(days=1)
+
         return True
+
     
     def setup_calendar(self):
-        """ Initialize calendar and setup permanent HOLIDAYS """
+        """Initialize calendar and setup permanent holidays, events, and special days"""
+
+        # Reset the months list and set up other necessary data
+        self.reset()
+
+        # Initialize event lists inside setup_calendar
+        self.awd_dates_list = []  # Populate with AWD event dates
+        self.id_dates_list = []  # Populate with Instructional Day event dates
+        self.finals_dates_list = []  # Populate with Final exam dates
+        self.commencement_dates_list = []  # Populate with Commencement event dates
+        self.no_class_campus_open_dates_list = []  # Populate with 'No Class, Campus Open' dates
+        self.summer_session_dates_list = []  # Populate with Summer session dates
+        self.winter_session_dates_list = []  # Populate with Winter session dates
+        self.holiday_dates_list = []  # Populate with Holidays
+        self.void_dates_list = []  # Populate with Void or inactive dates
+
+        # Set up CalMonth objects for each month and store them in self.months
         cur_date = self.start_date
-        # For Fall Semester, While the current date is before Christmas
-        while cur_date < date(self.start_date.year+1, self.start_date.month+1, self.start_date.day):
-            daylist = self.us_holidays.get_list(cur_date)
-            if daylist:
-                for day in daylist:
-                    if day in self.holiday_list:
+        for _ in range(12):  # Generate 12 months of calendar starting from self.start_date
+            cal_month = CalMonth(cur_date.year, cur_date.month, self.font, self.small_font, self.small_font_bold)
+            self.months.append(cal_month)
+            cur_date = cur_date + relativedelta(months=1)
+
+        # Populate the calendar with permanent holidays
+        cur_date = self.start_date
+        end_date = self.start_date + relativedelta(years=1)
+
+        while cur_date < end_date:
+            # Ensure all dates are added to cal_dict, initializing them as NONE by default
+            self.cal_dict[cur_date] = DayType.NONE
+
+            # Check if cur_date is a holiday using the self.us_holidays list
+            if cur_date in self.us_holidays:
+                # Check if the holiday is in your predefined list of holidays (e.g., Thanksgiving, Christmas, etc.)
+                for holiday_name in self.holiday_list:
+                    if holiday_name in self.us_holidays.get(cur_date):
                         self.cal_dict[cur_date] = DayType.HOLIDAY
                         break
-                    else:
-                        self.cal_dict[cur_date] = DayType.NONE
-            else:
-                self.cal_dict[cur_date] = DayType.NONE 
-                
+
+            # Move to the next day
             cur_date = cur_date + relativedelta(days=1)
-        
-        # Thanksgiving week off 
+
+        # Handle special events like Thanksgiving week off if extended fall is selected
         if self.inputs.extended_fall:
-            for i in range(1,4):
-                self.cal_dict[self.us_holidays.get_named("Thanksgiving")[0] + relativedelta(days=-i)] = DayType.NO_CLASS_CAMPUS_OPEN
-        
-        # Christmas to New Year - VOID
+            thanksgiving_day = self.us_holidays.get_named("Thanksgiving")[0]
+            for i in range(1, 4):  # The three days before Thanksgiving
+                self.cal_dict[thanksgiving_day - relativedelta(days=i)] = DayType.NO_CLASS_CAMPUS_OPEN
+
+        # Handle the days from Christmas (Dec 26) to New Year's (Jan 1) as VOID days
         day_after_xmas = date(self.start_date.year, 12, 26)
-        new_year = date(self.start_date.year+1, 1, 1)
+        new_year = date(self.start_date.year + 1, 1, 1)
         cur_date = day_after_xmas
-        while (cur_date < new_year):
+        while cur_date <= new_year:
             self.cal_dict[cur_date] = DayType.VOID
             cur_date = cur_date + relativedelta(days=1)
+
+        # If there are additional AWD, ID, or Convocation events, populate them here
+        self.populate_event_days()
+
+    def populate_event_days(self):
+        """Populate AWD, Convocation, ID, Finals, and other event days in the calendar"""
+
+        # Example: Add AWD (Alternative Work Days) event days
+        for awd_day in self.awd_dates_list:
+            self.cal_dict[awd_day] = DayType.AWD
+            print(f"AWD day populated: {awd_day} -> {DayType.AWD}")
+
+        # Example: Add Instructional Days (ID) event days
+        for id_day in self.id_dates_list:
+            self.cal_dict[id_day] = DayType.ID
+            print(f"ID day populated: {id_day} -> {DayType.ID}")
+
+        # Example: Add Convocation Day
+        if self.convocation_day:
+            self.cal_dict[self.convocation_day] = DayType.CONVOCATION
+            print(f"Convocation day populated: {self.convocation_day} -> {DayType.CONVOCATION}")
+        
+        # Example: Add Finals days
+        for finals_day in self.finals_dates_list:
+            self.cal_dict[finals_day] = DayType.FINALS
+            print(f"Finals day populated: {finals_day} -> {DayType.FINALS}")
+        
+        # Example: Add Commencement days (for graduation events)
+        for commencement_day in self.commencement_dates_list:
+            self.cal_dict[commencement_day] = DayType.COMMENCEMENT
+            print(f"Commencement day populated: {commencement_day} -> {DayType.COMMENCEMENT}")
+        
+        # Example: No Class but Campus Open days (typically holidays where staff might work, but classes aren't in session)
+        for no_class_day in self.no_class_campus_open_dates_list:
+            self.cal_dict[no_class_day] = DayType.NO_CLASS_CAMPUS_OPEN
+            print(f"No Class/Campus Open day populated: {no_class_day} -> {DayType.NO_CLASS_CAMPUS_OPEN}")
+        
+        # Example: Add Summer Session days
+        for summer_session_day in self.summer_session_dates_list:
+            self.cal_dict[summer_session_day] = DayType.SUMMER_SESSION
+            print(f"Summer Session day populated: {summer_session_day} -> {DayType.SUMMER_SESSION}")
+        
+        # Example: Add Winter Session days
+        for winter_session_day in self.winter_session_dates_list:
+            self.cal_dict[winter_session_day] = DayType.WINTER_SESSION
+            print(f"Winter Session day populated: {winter_session_day} -> {DayType.WINTER_SESSION}")
+
+        # Example: Add other holidays or custom events
+        for holiday_date in self.holiday_dates_list:
+            self.cal_dict[holiday_date] = DayType.HOLIDAY
+            print(f"Holiday populated: {holiday_date} -> {DayType.HOLIDAY}")
+
+        # If there are any VOID days (days that are inactive or unimportant in the calendar, e.g., non-working days in a session):
+        for void_day in self.void_dates_list:
+            self.cal_dict[void_day] = DayType.VOID
+            print(f"VOID day populated: {void_day} -> {DayType.VOID}")
+
 
     def draw(self, calendar : list[CalMonth], m_width=350, m_height=350) -> Image:
         # Create a blank canvas (resulting image)
@@ -822,6 +900,17 @@ class CalYear:
             self.day_awd_count['fall'][Day(the_date.weekday())] += 1
         else:
             self.day_awd_count['spring'][Day(the_date.weekday())] += 1
+    
+    def get_day_type(self, year, month, day):
+        """Return the day type for a specific date"""
+        the_date = date(year, month, day)
+
+        # Check if the date exists in the calendar dictionary
+        if the_date in self.cal_dict:
+            return self.cal_dict[the_date]  # Return the DayType enum
+        else:
+            return DayType.NONE  # Default to DayType.NONE if the date isn't in the dictionary
+
 
 
 def add_weekdays(start_date : date, num_weekdays: int) -> date:
