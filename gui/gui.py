@@ -24,11 +24,30 @@ def build_years_request(dt : datetime, input_dict : dict):
     else:
         return None
     
-def download_calendar_as_excel_colored(input_dict):
-    response = requests.post("http://127.0.0.1:8000/calendar/download_excel_colored", json=input_dict)
+def download_calendar():
+    url = "http://127.0.0.1:8000/calendar/download_excel_colored"  # Ensure your FastAPI server is running
+
+    # Sample data to send with the request
+    req_data = {
+        "some_field": "value"  # Update this with the appropriate fields for Calendar_Input
+    }
+    
+    # Make a POST request to the FastAPI endpoint
+    response = requests.post(url, json=req_data)
+    
     if response.status_code == 200:
-        return response.content
-    return None
+        # Retrieve the file content from FastAPI
+        excel_data = response.content
+
+        # Streamlit download button for downloading the file
+        st.download_button(
+            label="Download Excel Calendar",
+            data=excel_data,
+            file_name="calendar_colored.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.error("Failed to download calendar")
 
 def main():
     # Set Default Page Width = WIDE
@@ -38,6 +57,8 @@ def main():
     # Streamlit Global Environment Variables
     if 'first_day' not in st.session_state:
         st.session_state.first_day = None
+    if 'excel_contents' not in st.session_state:
+        st.session_state.excel_contents = {}
 
     # GUI
     st.markdown("## CSULB Academic Calender Generator")
@@ -123,34 +144,34 @@ def main():
                     for result in results:
                         if result["image"]:
                             with st.expander(f"Option {i}"):
-                                col1, col2, col3 = st.columns([1,15,1])
+                                col1, col2, col3 = st.columns([1, 15, 1])
                                 with col1:
                                     st.write(' ')
                                 with col2:
-                                    #st.image(build_year(selected_year))
-                                    # call the build_year endpoint on the server, -> get the image
-                                    # display the image
                                     img = base64.b64decode(result['image'])
-                                    # result = build_years_request(st.session_state.first_day, input_dict)
-                                    #st.write(img)
                                     st.image(img, output_format="PNG")
                                 with col3:
                                     st.write(' ')
-                        
-                    # Show the download button only after results are generated
-                            if st.button(f'Download Excel for Option {i}', key=f'download_button_{i}'):
-                                excel_content = download_calendar_as_excel_colored(input_dict)  # Modify this to handle each option's data if necessary
-                                if excel_content:
-                                    st.download_button(
-                                        label=f"Download Excel for Option {i}",
-                                        data=excel_content,
-                                        file_name=f"calendar_option_{i}.xlsx",
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                    )
-                            i += 1
-                    else:
-                        st.markdown("#### No Valid Calendars Found. Please adjust your settings.")
 
+                            # Generate Excel for this option
+                            if st.button(f'Generate Excel for Option {i}', key=f'generate_button_{i}'):
+                                excel_content = download_calendar(input_dict)
+                                if excel_content:
+                                    st.session_state.excel_contents[i] = excel_content
+                                    st.success(f"Excel for Option {i} generated!")
+
+                            # Show the download button for generated Excel
+                            if i in st.session_state.excel_contents:
+                                st.download_button(
+                                    label=f"Download Excel for Option {i}",
+                                    data=st.session_state.excel_contents[i],
+                                    file_name=f"calendar_option_{i}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+
+                            i += 1
+                else:
+                    st.markdown("#### No Valid Calendars Found. Please adjust your settings.")
 
 if __name__ == '__main__':
     main()
