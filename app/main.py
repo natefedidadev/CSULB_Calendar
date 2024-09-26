@@ -12,6 +12,7 @@ import itertools
 import logging
 import openpyxl
 from openpyxl.styles import PatternFill
+from app.classes.year import DayType
 
 app = FastAPI()
 
@@ -173,16 +174,22 @@ def generate_colored_excel_calendar(calyear):
     wb = openpyxl.Workbook()
     
     day_type_colors = {
-        "None": "FFFFFF",  # White
-        "AWD": "CCEFFF",   # Light Blue
-        "ID": "EFEF95",    # Yellow
-        "Convocation": "50E3C2",  # Greenish
-        "Finals": "F8CBAD",  # Peach
-        "No Class, Campus Open": "AE76C7",  # Purple
-        "Commencement": "BD10E0",  # Magenta
-        "Summer Session": "C5E0B4",  # Light Green
-        "Winter Session": "CFCFCF",  # Gray
+        DayType.AWD: "CCEFFF",  # Light Blue
+        DayType.ID: "EFEF95",  # Yellow
+        DayType.CONVOCATION: "50E3C2",  # Greenish
+        DayType.FINALS: "F8CBAD",  # Peach
+        DayType.NO_CLASS_CAMPUS_OPEN: "AE76C7",  # Purple
+        DayType.COMMENCEMENT: "BD10E0",  # Magenta
+        DayType.SUMMER_SESSION: "C5E0B4",  # Light Green
+        DayType.WINTER_SESSION: "CFCFCF",  # Gray
+        DayType.NONE: "FFFFFF",  # White
+        DayType.HOLIDAY: "F8CBAD",  # Add a color for holiday
+        DayType.VOID: "D9D9D9",  # Light Gray
     }
+
+    print("Day Type to Color Mapping in generate_colored_excel_calendar:")
+    for day_type, color in day_type_colors.items():
+        print(f"{day_type}: {color}")
 
     for i, calmonth in enumerate(calyear.months):  # Assuming calyear.months holds months
         ws = wb.create_sheet(title=f"{calmonth.get_title()}")
@@ -193,10 +200,14 @@ def generate_colored_excel_calendar(calyear):
 
         for row, week in enumerate(calmonth.cal, start=2):  
             for col, day in enumerate(week, start=1):
+                if day == 0:
+                    continue
+
                 cell = ws.cell(row=row, column=col, value=day if day != 0 else "")
                 
                 day_type = calyear.get_day_type(calmonth.year, calmonth.month, day)  # Get day type
                 if day_type and day_type != "None":
+                    print(f"Day: {day}, Type: {day_type}, Color: {day_type_colors[day_type]}")
                     fill_color = PatternFill(start_color=day_type_colors[day_type], end_color=day_type_colors[day_type], fill_type="solid")
                     cell.fill = fill_color
 
