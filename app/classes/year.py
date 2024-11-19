@@ -13,6 +13,9 @@ import random
 from typing import Dict, Any
 import hashlib
 import json
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
 
 class Day(Enum):
     MONDAY = 0
@@ -83,6 +86,7 @@ class CalYear:
         self.inputs = inputs
         self.start_date = date(inputs.year, inputs.month, inputs.day)
         self.valid = True
+        self.months = []
 
         if self.start_date < date(inputs.year, 8, 15) or self.start_date >= date(inputs.year, 9, 1):
             self.valid = False
@@ -93,10 +97,11 @@ class CalYear:
         self.setup_calendar()
 
     def reset(self):
+        self.months = []
         self.month_stats : dict = {}
         self.cal_dict : dict = {}
-        self.day_id_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0},
-                                   "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0}}
+        self.day_id_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0},
+                                   "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0}}
         self.day_awd_count: dict = {"fall": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0},
                                    "spring": {Day.MONDAY: 0, Day.TUESDAY: 0, Day.WEDNESDAY: 0, Day.THURSDAY: 0, Day.FRIDAY: 0, Day.SATURDAY: 0}}
         # Important dates
@@ -459,30 +464,43 @@ class CalYear:
         return True
     
     def compute_spring_break(self, combine_cc_day=True) -> bool:
-        """ Calculates spring break """
+        """ Calculates spring break and ensures Cesar Chavez Day is correctly assigned """
+        cesar_date = None
+
+        # Get Cesar Chavez Day, if it's a weekend, get the observed date
         for cd in self.us_holidays.get_named("Cesar Chavez Day"):
-            # get cesar day, if its a weekend, get observed date
-            if not is_weekend(cd) and cd.year == (self.start_date.year + 1):
+            if cd.year == (self.start_date.year + 1):
                 cesar_date = cd
+                if is_weekend(cesar_date):
+                    if cesar_date.weekday() == 5:  # Saturday
+                        cesar_date = cesar_date + relativedelta(days=2)  # Move to Monday
+                    elif cesar_date.weekday() == 6:  # Sunday
+                        cesar_date = cesar_date + relativedelta(days=-2)  # Move to Friday
+                    print(f"Cesar Chavez Day falls on a weekend. Observing it on {cesar_date}.")
+                break  # Ensure we use the first instance found for the correct year
+
+        # If no Cesar Chavez Day is found, raise an error (instead of using a fallback) to catch the issue
+        if cesar_date is None:
+            raise ValueError(f"ERROR: Cesar Chavez Day not found for year {self.start_date.year + 1}. This should not happen.")
+
         if combine_cc_day:
             # Cesar Chavez day is always March 31. So make it part of spring break.
-            spring_break_start = get_monday(cesar_date) # get the monday of the week that ceasar chavez falls in
+            spring_break_start = get_monday(cesar_date)  # Get the Monday of the week that Cesar Chavez falls in
             cur_date = spring_break_start
-            for i in range(0,5):
+            for i in range(0, 5):
                 if cur_date != cesar_date:
                     self.cal_dict[cur_date] = DayType.NO_CLASS_CAMPUS_OPEN
                 cur_date = cur_date + relativedelta(days=1)
         else:
-            # put spring break before cc day
-            # Calculate Spring Break (5 consecutive days w/o classes) - LBCC week preceeding easter
+            # Put spring break before Cesar Chavez Day
             easter_monday_following_year = self.us_holidays.get_named("Easter Monday")[1]
             spring_break_start = easter_monday_following_year + relativedelta(days=-7)
             spring_break_end = easter_monday_following_year + relativedelta(days=-3)
-            if spring_break_start <= cesar_date and cesar_date <= spring_break_end:
-                # move spring break up one week
-                spring_break_start = spring_break_start + relativedelta(weeks=-1)
-            for i in range(0,5):
+            if spring_break_start <= cesar_date <= spring_break_end:
+                spring_break_start = spring_break_start + relativedelta(weeks=-1)  # Move spring break up one week
+            for i in range(0, 5):
                 self.cal_dict[spring_break_start + relativedelta(days=i)] = DayType.NO_CLASS_CAMPUS_OPEN
+
         return True
 
     def compute_winter_session(self, winter_sess_len = 12) -> bool:
@@ -519,63 +537,157 @@ class CalYear:
         if self.summer_session_start.weekday() >= 4:
             skip_days = 7 - self.summer_session_start.weekday()
             self.summer_session_start = self.summer_session_start + relativedelta(days=skip_days)
-        
-        # Check if Holiday
-        if self.cal_dict[self.summer_session_start] == DayType.HOLIDAY:
-            self.summer_session_start = self.summer_session_start + relativedelta(days=1)
 
-        
-        # for i in range(84): # 84 days is 12 weeks
-        #     cur_date = self.summer_session_start + relativedelta(days=i)
-        #     if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
-        #         self.cal_dict[cur_date] = DayType.SUMMER_SESSION
-        #         self.summer_session_id += 1
-        #         self.month_stats[date(cur_date.year, cur_date.month, 1)]["SUM"] += 1
-        # return True
+        # Check if Holiday
+        if self.cal_dict.get(self.summer_session_start, DayType.NONE) == DayType.HOLIDAY:
+            self.summer_session_start = self.summer_session_start + relativedelta(days=1)
 
         # Populate Calendar with Summer Session Days for 12 weeks 
         cur_date = self.summer_session_start
-        summer_session_end = self.summer_session_start + timedelta(weeks=11) + timedelta(days=(6-self.summer_session_start.weekday()))
+        summer_session_end = self.summer_session_start + timedelta(weeks=11) + timedelta(days=(6 - self.summer_session_start.weekday()))
         while cur_date <= summer_session_end:
-            if (not is_weekend(cur_date)) and self.cal_dict[cur_date] == DayType.NONE:
+            if (not is_weekend(cur_date)) and self.cal_dict.get(cur_date, DayType.NONE) == DayType.NONE:
                 self.cal_dict[cur_date] = DayType.SUMMER_SESSION
                 self.summer_session_id += 1
                 self.month_stats[date(cur_date.year, cur_date.month, 1)]["SUM"] += 1
 
             # Move to the next day
             cur_date += timedelta(days=1)
+
         return True
     
+
+    def populate_cal_dict(self):
+        # Example setup for `self.cal_dict`
+        for month in range(1, 13):
+            start_date = date(self.start_date.year, month, 1)
+            end_date = (start_date + relativedelta(months=1)) - timedelta(days=1)
+            current_date = start_date
+
+            while current_date <= end_date:
+                if current_date.weekday() in (5, 6):  # Assume weekends are VOID for simplicity
+                    self.cal_dict[current_date] = DayType.VOID
+                elif current_date.weekday() == 0:  # Example: Assign every Monday as AWD
+                    self.cal_dict[current_date] = DayType.AWD
+                else:
+                    self.cal_dict[current_date] = DayType.ID
+                current_date += timedelta(days=1)
+
+
+    
     def setup_calendar(self):
-        """ Initialize calendar and setup permanent HOLIDAYS """
+        """Initialize calendar and setup permanent holidays, events, and special days"""
+
+        # Reset the months list and set up other necessary data
+        self.reset()
+
+        # Initialize event lists inside setup_calendar
+        self.awd_dates_list = []  # Populate with AWD event dates
+        self.id_dates_list = []  # Populate with Instructional Day event dates
+        self.finals_dates_list = []  # Populate with Final exam dates
+        self.commencement_dates_list = []  # Populate with Commencement event dates
+        self.no_class_campus_open_dates_list = []  # Populate with 'No Class, Campus Open' dates
+        self.summer_session_dates_list = []  # Populate with Summer session dates
+        self.winter_session_dates_list = []  # Populate with Winter session dates
+        self.holiday_dates_list = []  # Populate with Holidays
+        self.void_dates_list = []  # Populate with Void or inactive dates
+
+        # Set up CalMonth objects for each month and store them in self.months
         cur_date = self.start_date
-        # For Fall Semester, While the current date is before Christmas
-        while cur_date < date(self.start_date.year+1, self.start_date.month+1, self.start_date.day):
-            daylist = self.us_holidays.get_list(cur_date)
-            if daylist:
-                for day in daylist:
-                    if day in self.holiday_list:
+        for _ in range(13):  # Generate 13 months of calendar starting from self.start_date
+            cal_month = CalMonth(cur_date.year, cur_date.month, self.font, self.small_font, self.small_font_bold)
+            self.months.append(cal_month)
+            cur_date = cur_date + relativedelta(months=1)
+
+        # Populate the calendar with permanent holidays
+        cur_date = self.start_date
+        end_date = self.start_date + relativedelta(years=1)
+
+        while cur_date < end_date:
+            # Ensure all dates are added to cal_dict, initializing them as NONE by default
+            self.cal_dict[cur_date] = DayType.NONE
+
+            # Check if cur_date is a holiday using the self.us_holidays list
+            if cur_date in self.us_holidays:
+                # Check if the holiday is in your predefined list of holidays (e.g., Thanksgiving, Christmas, etc.)
+                for holiday_name in self.holiday_list:
+                    if holiday_name in self.us_holidays.get(cur_date):
                         self.cal_dict[cur_date] = DayType.HOLIDAY
                         break
-                    else:
-                        self.cal_dict[cur_date] = DayType.NONE
-            else:
-                self.cal_dict[cur_date] = DayType.NONE 
-                
+
+            # Move to the next day
             cur_date = cur_date + relativedelta(days=1)
-        
-        # Thanksgiving week off 
+
+        # Handle special events like Thanksgiving week off if extended fall is selected
         if self.inputs.extended_fall:
-            for i in range(1,4):
-                self.cal_dict[self.us_holidays.get_named("Thanksgiving")[0] + relativedelta(days=-i)] = DayType.NO_CLASS_CAMPUS_OPEN
-        
-        # Christmas to New Year - VOID
+            thanksgiving_day = self.us_holidays.get_named("Thanksgiving")[0]
+            for i in range(1, 4):  # The three days before Thanksgiving
+                self.cal_dict[thanksgiving_day - relativedelta(days=i)] = DayType.NO_CLASS_CAMPUS_OPEN
+
+        # Handle the days from Christmas (Dec 26) to New Year's (Jan 1) as VOID days
         day_after_xmas = date(self.start_date.year, 12, 26)
-        new_year = date(self.start_date.year+1, 1, 1)
+        new_year = date(self.start_date.year + 1, 1, 1)
         cur_date = day_after_xmas
-        while (cur_date < new_year):
+        while cur_date <= new_year:
             self.cal_dict[cur_date] = DayType.VOID
             cur_date = cur_date + relativedelta(days=1)
+
+        # If there are additional AWD, ID, or Convocation events, populate them here
+        self.populate_event_days()
+
+    def populate_event_days(self):
+        """Populate AWD, Convocation, ID, Finals, and other event days in the calendar"""
+
+        # Example: Add AWD (Alternative Work Days) event days
+        for awd_day in self.awd_dates_list:
+            self.cal_dict[awd_day] = DayType.AWD
+            print(f"AWD day populated: {awd_day} -> {DayType.AWD}")
+
+        # Example: Add Instructional Days (ID) event days
+        for id_day in self.id_dates_list:
+            self.cal_dict[id_day] = DayType.ID
+            print(f"ID day populated: {id_day} -> {DayType.ID}")
+
+        # Example: Add Convocation Day
+        if self.convocation_day:
+            self.cal_dict[self.convocation_day] = DayType.CONVOCATION
+            print(f"Convocation day populated: {self.convocation_day} -> {DayType.CONVOCATION}")
+        
+        # Example: Add Finals days
+        for finals_day in self.finals_dates_list:
+            self.cal_dict[finals_day] = DayType.FINALS
+            print(f"Finals day populated: {finals_day} -> {DayType.FINALS}")
+        
+        # Example: Add Commencement days (for graduation events)
+        for commencement_day in self.commencement_dates_list:
+            self.cal_dict[commencement_day] = DayType.COMMENCEMENT
+            print(f"Commencement day populated: {commencement_day} -> {DayType.COMMENCEMENT}")
+        
+        # Example: No Class but Campus Open days (typically holidays where staff might work, but classes aren't in session)
+        for no_class_day in self.no_class_campus_open_dates_list:
+            self.cal_dict[no_class_day] = DayType.NO_CLASS_CAMPUS_OPEN
+            print(f"No Class/Campus Open day populated: {no_class_day} -> {DayType.NO_CLASS_CAMPUS_OPEN}")
+        
+        # Example: Add Summer Session days
+        for summer_session_day in self.summer_session_dates_list:
+            self.cal_dict[summer_session_day] = DayType.SUMMER_SESSION
+            print(f"Summer Session day populated: {summer_session_day} -> {DayType.SUMMER_SESSION}")
+        
+        # Example: Add Winter Session days
+        for winter_session_day in self.winter_session_dates_list:
+            self.cal_dict[winter_session_day] = DayType.WINTER_SESSION
+            print(f"Winter Session day populated: {winter_session_day} -> {DayType.WINTER_SESSION}")
+
+        # Example: Add other holidays or custom events
+        for holiday_date in self.holiday_dates_list:
+            self.cal_dict[holiday_date] = DayType.HOLIDAY
+            print(f"Holiday populated: {holiday_date} -> {DayType.HOLIDAY}")
+
+        # If there are any VOID days (days that are inactive or unimportant in the calendar, e.g., non-working days in a session):
+        for void_day in self.void_dates_list:
+            self.cal_dict[void_day] = DayType.VOID
+            print(f"VOID day populated: {void_day} -> {DayType.VOID}")
+
 
     def draw(self, calendar : list[CalMonth], m_width=350, m_height=350) -> Image:
         # Create a blank canvas (resulting image)
@@ -809,6 +921,236 @@ class CalYear:
             self.day_awd_count['fall'][Day(the_date.weekday())] += 1
         else:
             self.day_awd_count['spring'][Day(the_date.weekday())] += 1
+    
+    def get_day_type(self, year, month, day):
+        """Return the day type for a specific date"""
+        the_date = date(year, month, day)
+
+        # Check if the date exists in the calendar dictionary
+        if the_date in self.cal_dict:
+            return self.cal_dict[the_date]  # Return the DayType enum
+        else:
+            return DayType.NONE  # Default to DayType.NONE if the date isn't in the dictionary
+        
+    def generate_colored_excel_calendar(self):
+        # Create a new workbook and select the active worksheet
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Academic Calendar"
+
+        # Define the color map for each DayType
+        day_type_colors = {
+            DayType.NONE: "FFFFFF",  # White
+            DayType.AWD: "CCE5FF",   # Light blue
+            DayType.ID: "EFEF95",    # Yellow
+            DayType.CONVOCATION: "50E3C2",
+            DayType.FINALS: "F8CBAD",
+            DayType.NO_CLASS_CAMPUS_OPEN: "AE76C7",
+            DayType.COMMENCEMENT: "BD10E0",
+            DayType.SUMMER_SESSION: "C5E0B4",
+            DayType.WINTER_SESSION: "CFCFCF",
+            DayType.HOLIDAY: "FFC107",
+            DayType.VOID: "BDBDBD"
+        }
+
+        # Set the starting position for the calendar layout
+        start_row = 2
+        start_col = 1
+
+        # Define the number of rows each month should occupy
+        rows_per_month = 11  # Adjusted to include month name, headers, weeks, note, and padding
+
+        # Iterate through each month and populate the calendar in Excel
+        for month_index, cal_month in enumerate(self.months):
+            row_offset = start_row + (month_index // 3) * rows_per_month
+            col_offset = start_col + (month_index % 3) * 8
+
+            # Write the month name
+            ws.cell(row=row_offset, column=col_offset, value=cal_month.get_title()).font = Font(bold=True)
+
+            # Day headers
+            for i, day_name in enumerate(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], start=col_offset):
+                ws.cell(row=row_offset + 1, column=i, value=day_name).alignment = Alignment(horizontal="center")
+
+            # Populate days with colors
+            for week_row, week in enumerate(cal_month.cal, start=row_offset + 2):
+                for day_col, day in enumerate(week, start=col_offset):
+                    if day == 0:
+                        continue
+                    cell = ws.cell(row=week_row, column=day_col, value=day)
+                    date_obj = date(cal_month.year, cal_month.month, day)
+                    if date_obj in self.cal_dict:
+                        day_type = self.cal_dict[date_obj]
+                        cell.fill = PatternFill(start_color=day_type_colors[day_type], end_color=day_type_colors[day_type], fill_type="solid")
+                        if day_type in [DayType.HOLIDAY, DayType.COMMENCEMENT]:
+                            cell.font = Font(bold=True)
+
+            # Ensure the calendar occupies 6 weeks
+            num_weeks = len(cal_month.cal)
+            for extra_row in range(6 - num_weeks):
+                week_row = row_offset + 2 + num_weeks + extra_row
+                for day_col in range(col_offset, col_offset + 7):
+                    ws.cell(row=week_row, column=day_col, value="")
+
+            # The note should be on the row after the 6th week
+            note_row = row_offset + 2 + 6
+
+            # Retrieve month stats
+            month_key = date(cal_month.year, cal_month.month, 1)
+            stats = self.month_stats.get(month_key, {})
+            note_parts = []
+            if stats.get('AWD'):
+                note_parts.append(f"AWD={stats['AWD']}")
+            if stats.get('ID'):
+                note_parts.append(f"ID={stats['ID']}")
+            if stats.get('SUM'):
+                note_parts.append(f"SUM={stats['SUM']}")
+            if stats.get('WIN'):
+                note_parts.append(f"WIN={stats['WIN']}")
+            note_text = ", ".join(note_parts)
+
+            # Write the note under the calendar
+            if note_text:
+                ws.cell(row=note_row, column=col_offset, value=note_text).font = Font(italic=True)
+
+        # Calculate the total height of the months grid
+        months_per_row = 3
+        num_rows_of_months = (len(self.months) + months_per_row - 1) // months_per_row
+        total_months_height = num_rows_of_months * rows_per_month
+
+        # Add some padding rows after the last month
+        padding_after_months = 3
+
+        # Starting row for the Months Table
+        table_start_row = start_row + total_months_height + padding_after_months
+        table_start_col = start_col
+
+        # Set the starting position for the legend
+        legend_row = start_row
+        legend_col = start_col + months_per_row * 8  # Adjust based on months per row and columns per month
+
+        # Write the legend
+        for index, (day_type, color) in enumerate(day_type_colors.items()):
+            row = legend_row + index
+            ws.cell(row=row, column=legend_col, value=day_type.name).alignment = Alignment(horizontal='left')
+            color_cell = ws.cell(row=row, column=legend_col + 1)
+            color_cell.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+
+        # Adjust the summary placement to sit to the right of the legend
+        summary_row = legend_row + len(day_type_colors) + 2
+        summary_col = legend_col
+
+        ws.cell(row=summary_row, column=summary_col, value=f"Academic Work Days = {self.num_awd}").font = Font(bold=True)
+        ws.cell(row=summary_row + 1, column=summary_col, value=f"Instructional Days = {self.num_id}").font = Font(bold=True)
+        ws.cell(row=summary_row + 2, column=summary_col, value=f"Winter Session = {self.winter_session_id}").font = Font(bold=True)
+        ws.cell(row=summary_row + 3, column=summary_col, value=f"Summer Session = {self.summer_session_id}").font = Font(bold=True)
+
+        # Create Months Table
+        # Collect months for Fall (August to December)
+        months_fall = []
+        awd_fall = []
+        id_fall = []
+
+        aug_count = 0
+        for cal_month in self.months:
+            if cal_month.month == 8: aug_count += 1
+            if cal_month.month in [8, 9, 10, 11, 12]:  # August to December
+                if aug_count == 2: break
+                months_fall.append(cal_month.get_abbr())
+                stats = self.month_stats.get(date(cal_month.year, cal_month.month, 1), {})
+                awd_fall.append(stats.get('AWD', 0))
+                id_fall.append(stats.get('ID', 0))
+
+        # Collect months for Spring (January to May)
+        months_spring = []
+        awd_spring = []
+        id_spring = []
+
+        for cal_month in self.months:
+            if cal_month.month in [1, 2, 3, 4, 5]:  # January to May
+                months_spring.append(cal_month.get_abbr())
+                stats = self.month_stats.get(date(cal_month.year, cal_month.month, 1), {})
+                awd_spring.append(stats.get('AWD', 0))
+                id_spring.append(stats.get('ID', 0))
+
+        # Add totals
+        months_fall.append('Total')
+        awd_fall.append(sum(awd_fall))
+        id_fall.append(sum(id_fall))
+
+        months_spring.append('Total')
+        awd_spring.append(sum(awd_spring))
+        id_spring.append(sum(id_spring))
+
+        # Define the colors
+        void_color = day_type_colors[DayType.VOID]
+        awd_color = day_type_colors[DayType.AWD]
+        id_color = day_type_colors[DayType.ID]
+
+        # Write headers with background colors for Months Table
+        headers = ['Fall', 'AWD', 'ID', 'Spring', 'AWD', 'ID']
+        header_colors = [void_color, awd_color, id_color, void_color, awd_color, id_color]
+
+        for col_offset, (header, color) in enumerate(zip(headers, header_colors)):
+            cell = ws.cell(row=table_start_row, column=table_start_col + col_offset, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+
+        # Write data for Months Table
+        for idx in range(len(months_fall)):
+            ws.cell(row=table_start_row + 1 + idx, column=table_start_col, value=months_fall[idx])
+            ws.cell(row=table_start_row + 1 + idx, column=table_start_col + 1, value=awd_fall[idx])
+            ws.cell(row=table_start_row + 1 + idx, column=table_start_col + 2, value=id_fall[idx])
+
+        for idx in range(len(months_spring)):
+            ws.cell(row=table_start_row + 1 + idx, column=table_start_col + 3, value=months_spring[idx])
+            ws.cell(row=table_start_row + 1 + idx, column=table_start_col + 4, value=awd_spring[idx])
+            ws.cell(row=table_start_row + 1 + idx, column=table_start_col + 5, value=id_spring[idx])
+
+        # Starting row for the Days Table, add some padding rows after the Months Table
+        days_table_start_row = table_start_row + max(len(months_fall), len(months_spring)) + 3  # Adjust as needed
+        days_table_start_col = table_start_col
+
+        # Create Days Table
+        days = ['M', 'T', 'W', 'R', 'F', 'Sa', 'Total']
+
+        # Collect AWD and ID data per day
+        awd_fall_days = [self.day_awd_count['fall'].get(Day(i), 0) for i in range(6)]
+        id_fall_days = [self.day_id_count['fall'].get(Day(i), 0) for i in range(6)]
+        awd_spring_days = [self.day_awd_count['spring'].get(Day(i), 0) for i in range(6)]
+        id_spring_days = [self.day_id_count['spring'].get(Day(i), 0) for i in range(6)]
+
+        # Add totals
+        awd_fall_days.append(sum(awd_fall_days))
+        id_fall_days.append(sum(id_fall_days))
+        awd_spring_days.append(sum(awd_spring_days))
+        id_spring_days.append(sum(id_spring_days))
+
+        # Write headers with background colors for Days Table
+        headers = ['Fall', 'AWD', 'ID', 'Spring', 'AWD', 'ID']
+        header_colors = [void_color, awd_color, id_color, void_color, awd_color, id_color]
+
+        for col_offset, (header, color) in enumerate(zip(headers, header_colors)):
+            cell = ws.cell(row=days_table_start_row, column=days_table_start_col + col_offset, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+
+        # Write data for Days Table
+        for idx in range(len(days)):
+            ws.cell(row=days_table_start_row + 1 + idx, column=days_table_start_col, value=days[idx])
+            ws.cell(row=days_table_start_row + 1 + idx, column=days_table_start_col + 1, value=awd_fall_days[idx])
+            ws.cell(row=days_table_start_row + 1 + idx, column=days_table_start_col + 2, value=id_fall_days[idx])
+
+            ws.cell(row=days_table_start_row + 1 + idx, column=days_table_start_col + 3, value=days[idx])
+            ws.cell(row=days_table_start_row + 1 + idx, column=days_table_start_col + 4, value=awd_spring_days[idx])
+            ws.cell(row=days_table_start_row + 1 + idx, column=days_table_start_col + 5, value=id_spring_days[idx])
+
+        # Save workbook to a BytesIO buffer instead of a file
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)  # Move the cursor to the beginning of the stream
+        return output
+
 
 
 def add_weekdays(start_date : date, num_weekdays: int) -> date:

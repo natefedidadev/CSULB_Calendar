@@ -6,4 +6,5 @@ fastapi
 uvicorn
 Pillow==9.5.0
 pydantic==2.4.2
+openpyxl==3.1.5
 shared-memory-dict
